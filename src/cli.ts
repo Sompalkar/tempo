@@ -246,6 +246,38 @@ function conflicts(): void {
   store.close();
 }
 
+/**
+ * Re-examine open conflicts with the reconciler. Ones that are really the
+ * same fact reworded get folded together; genuine disagreements stay open.
+ * Cheap: one judge call per conflict at most, no re-extraction.
+ */
+async function reconcile(): Promise<void> {
+  const store = openStore();
+  const open = store.conflicts(org, { status: 'open' });
+  if (open.length === 0) {
+    console.log('No open conflicts.');
+    store.close();
+    return;
+  }
+  const r = new Reconciler({ llm: defaultLLM() });
+  let merged = 0;
+  for (const c of open) {
+    const a = store.get(org, c.aId);
+    const b = store.get(org, c.bId);
+    if (!a || !b) continue;
+    const match = await r.matchExisting(c.key, b.value, [a.value]);
+    if (match !== null) {
+      store.merge({ org, conflictId: c.id, keepId: a.id, reason: 'reconciled: same fact, reworded' });
+      merged++;
+      console.log(`merged   ${c.key}\n           ${a.value.slice(0, 70)}\n        =  ${b.value.slice(0, 70)}`);
+    } else {
+      console.log(`kept     ${c.key}`);
+    }
+  }
+  console.log(`\n${merged} merged, ${open.length - merged} still open.`);
+  store.close();
+}
+
 /** What did ingest actually find? The interesting part is disagreement over time. */
 function report(): void {
   const store = openStore();
@@ -298,6 +330,9 @@ const help = `tempo — memory that knows when things stopped being true
   tempo conflicts [--status open|resolved|all]
         Facts that disagree.
 
+  tempo reconcile
+        Re-check open conflicts: fold rewordings together, keep real ones.
+
   tempo report
         What ingest found: what changed, what disagrees.
 
@@ -312,6 +347,9 @@ switch (cmd) {
     break;
   case 'conflicts':
     conflicts();
+    break;
+  case 'reconcile':
+    await reconcile();
     break;
   case 'report':
     report();

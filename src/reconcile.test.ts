@@ -10,7 +10,21 @@ describe('normalize', () => {
 describe('significantTokens', () => {
   it('keeps identifiers and drops prose and short words', () => {
     expect([...significantTokens('Both frontend and backend use Clerk instance driving-tapir-92.clerk.accounts.dev')])
-      .toEqual(['frontend', 'backend', 'clerk', 'instance', 'driving-tapir-92.clerk.accounts.dev']);
+      .toEqual(['frontend', 'backend', 'clerk', 'instance', 'driving-tapir-92.clerk.accounts.dev', 'driving', 'tapir', '92.clerk.accounts.dev']);
+  });
+  it('drops a trailing full stop but keeps internal dots', () => {
+    expect(significantTokens('retained for 72 hours.').has('hours')).toBe(true);
+    expect(significantTokens('host is api.example.com.').has('api.example.com')).toBe(true);
+  });
+  it('keeps numbers no matter how short', () => {
+    expect(significantTokens('port 80').has('80')).toBe(true);
+    expect(significantTokens('timeout 30.0').has('30.0')).toBe(true);
+  });
+  it('splits identifiers into their parts as well', () => {
+    const t = significantTokens('LOG_RETENTION_HOURS: 72');
+    expect(t.has('log_retention_hours')).toBe(true);
+    expect(t.has('hours')).toBe(true);
+    expect(t.has('72')).toBe(true);
   });
 });
 
@@ -46,6 +60,11 @@ describe('cheapVerdict', () => {
 
   it('still says different when the identifiers merely look alike but are unrelated words', () => {
     expect(cheapVerdict('uses redis', 'uses postgres')).toBe('different');
+  });
+
+  it('sends a prose sentence and its config-key twin to the judge, not straight to "different"', () => {
+    expect(cheapVerdict('Logs are retained for 72 hours.', 'LOG_RETENTION_HOURS: 72')).toBe('unknown');
+    expect(cheapVerdict('Old logs are pruned every 60 minutes.', 'LOG_PRUNE_INTERVAL_MINUTES: 60')).toBe('unknown');
   });
 });
 

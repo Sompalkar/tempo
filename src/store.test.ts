@@ -278,6 +278,24 @@ describe('recall: search', () => {
   });
 });
 
+describe('merge: a conflict that was really a rewording', () => {
+  it('folds the newer fact into the older, bumps confirmations, leaves a reason', () => {
+    const s = fresh();
+    const a = s.remember({ org: 'acme', key: 'k', value: 'retained 72 hours', source: alice, now: T(1) });
+    const b = s.remember({ org: 'acme', key: 'k', value: 'LOG_RETENTION_HOURS: 72', source: bob, now: T(1) });
+    s.merge({ org: 'acme', conflictId: b.conflictId!, keepId: a.id!, reason: 'rewording', now: T(2) });
+    const { facts, conflicts } = s.recall({ org: 'acme', key: 'k', asOf: T(3), validAt: T(3) });
+    expect(facts.map((f) => [f.value, f.confirmations])).toEqual([['retained 72 hours', 2]]);
+    expect(conflicts).toHaveLength(0);
+    expect(s.get('acme', b.id!)!.supersededBy).toBe(a.id);
+    expect(s.conflicts('acme', { status: 'resolved' })[0]!.reason).toBe('rewording');
+  });
+  it('refuses to merge a conflict that is not open', () => {
+    const s = fresh();
+    expect(() => s.merge({ org: 'acme', conflictId: 'nope', keepId: 'x', reason: 'r' })).toThrow(/not found/);
+  });
+});
+
 describe('ingest bookkeeping', () => {
   it('remembers which chunks were ingested, per org', () => {
     const s = fresh();

@@ -477,6 +477,38 @@ export class TempoStore {
     });
   }
 
+  /**
+   * Two facts in an open conflict turned out to be the same fact, reworded.
+   * Fold the newer into the older: close the newer, mark it superseded by
+   * the older, bump the older's confirmations, resolve the conflict with a
+   * reason that says why. Nothing is deleted.
+   */
+  merge(input: { org: string; conflictId: string; keepId: string; reason: string; now?: number }): void {
+    const now = input.now ?? Date.now();
+    const row = this.db
+      .prepare(`SELECT * FROM conflicts WHERE id = ? AND org = ? AND status = 'open'`)
+      .get(input.conflictId, input.org) as unknown as ConflictRow | undefined;
+    if (!row) throw new Error('tempo.merge: open conflict not found in this org');
+    if (input.keepId !== row.a_id && input.keepId !== row.b_id) throw new Error('tempo.merge: keepId must be one of the two');
+    const foldId = input.keepId === row.a_id ? row.b_id : row.a_id;
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(`UPDATE observations SET valid_to = ?, closed_at = ?, superseded_by = ? WHERE id = ?`)
+        .run(now, now, input.keepId, foldId);
+      this.db
+        .prepare(`UPDATE observations SET confirmations = confirmations + 1 WHERE id = ?`)
+        .run(input.keepId);
+      this.db
+        .prepare(`UPDATE conflicts SET status = 'resolved', winner_id = ?, reason = ?, resolved_at = ? WHERE id = ?`)
+        .run(input.keepId, input.reason, now, input.conflictId);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+
   /** Distinct keys in this org, most-used first. Used to steer extraction. */
   keys(org: string, limit = 300): string[] {
     const rows = this.db
