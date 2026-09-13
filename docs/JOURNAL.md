@@ -386,3 +386,44 @@ That is exactly where tempo should stop guessing and ask a person.
 fact filed under two names never meets itself, so a real contradiction
 between them would go unnoticed. Merging near-duplicate keys is the next
 piece of work.
+
+---
+
+## Day 2 — the full ingest
+
+### Failure #12 — the serialized writer was too slow to finish
+
+Started the full run: 68 sessions, 3,697 chunks. After five minutes:
+79 facts written, 340 extracted, and the gap growing. Extrapolated, the
+writer would have taken well over a day.
+
+The serialized writer from failure #10 was correct but it serialized too
+much. The race was *per key*: two writes to `deploy.command` must not
+interleave. Two writes to `deploy.command` and `db.port` never look at
+each other's rows, so serializing them was pure waste.
+
+`src/ingest/keyed-queue.ts`: jobs with the same key run in order; jobs with
+different keys overlap; a global cap bounds the total. Seven tests,
+including "a failing job does not block later jobs on the same key" and
+"drain waits for jobs added while draining" — the two edge cases that
+bite queues like this in practice.
+
+40 chunks: 64 seconds. Same 15 conflicts as the serialized version, so
+parallelism did not reintroduce the race.
+
+### Failure #13 — tests passed, `node` refused to start
+
+The new class used `constructor(private readonly maxInFlight: number)`,
+a TypeScript shorthand that declares and assigns a field in one go. Vitest
+transpiles TypeScript fully, so every test passed. Node's built-in type
+stripping only *erases* types; it cannot rewrite that shorthand into a
+field assignment, so `node src/cli.ts` died on import.
+
+Two fixes. The obvious one: write the field out by hand. The one that
+matters: `"erasableSyntaxOnly": true` in tsconfig, so `tsc` now rejects
+any TypeScript syntax Node cannot strip — verified by putting the bad
+line back and watching `tsc` fail on it.
+
+Lesson: when the test runner and the production runtime compile your code
+differently, a green test suite proves less than it looks. The
+typechecker had to be taught what the runtime actually accepts.
