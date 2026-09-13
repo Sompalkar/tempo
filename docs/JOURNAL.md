@@ -136,3 +136,65 @@ being trusted (`git stash` the fix, run, see red, `git stash pop`).
 Lesson: after tests are green, read the code once more specifically
 hunting for "what input would make this quietly wrong?" Quiet wrongness is
 worse than a crash.
+
+---
+
+## Day 1, later — public repo and the Claude Code plugin
+
+Repo is public: https://github.com/Sompalkar/tempo
+
+### The hook
+
+`src/hook.ts` runs before every prompt in Claude Code. It pulls the
+meaningful words out of the prompt ("deploy", "billing", "postgres"),
+searches memory for each, and hands the matching facts to Claude as extra
+context. No LLM involved — it is a word match, on purpose: it runs in a few
+milliseconds and cannot fail in interesting ways. If nothing matches it
+prints nothing. If anything breaks it prints nothing and exits 0, because a
+memory hiccup must never block someone's prompt.
+
+Small engine change to support it: `recall({ query })` now searches keys as
+well as values. A prompt says "deploy"; the key is `deploy.command`.
+
+### Failure #4 — "prepare" never ran
+
+Plan was: the plugin points at `dist/`, and a `prepare` script in
+package.json builds `dist/` when Claude Code runs `npm ci` on install.
+Claude Code does run `npm ci` — `node_modules/` appeared in the plugin
+cache — but with lifecycle scripts disabled (sensible: you do not want a
+plugin running arbitrary scripts on install). So no `dist/`, and the plugin
+would have failed on first use.
+
+Two fixes were possible: commit `dist/` (noisy, easy to forget to rebuild),
+or run the TypeScript directly. Node 26 strips types natively with no flag,
+so the plugin now runs `node src/mcp.ts` and `node src/hook.ts`. Imports
+changed from `./store.js` to `./store.ts`; TypeScript's
+`rewriteRelativeImportExtensions` still emits `.js` in `dist/` for the npm
+package. The end-to-end tests now spawn the `.ts` files — the exact thing
+the plugin runs — not the built output.
+
+This is also a nicer story: no build step anywhere. Clone and it works.
+
+### Failure #5 — the plugin was installed but "failed to load"
+
+`claude plugin list` showed `✘ failed to load: Duplicate hooks file`.
+`hooks/hooks.json` and `.mcp.json` are discovered automatically; naming
+them again in `plugin.json` counts as loading them twice. Removed both
+lines from the manifest. Now `✔ enabled`.
+
+Lesson: "installed" and "working" are different states. Check the second
+one.
+
+### Failure #6 (not ours) — could not run the live demo yet
+
+Wanted to drive real Claude Code headlessly: one session remembers, a
+fresh session recalls via the hook. The CLI's login token had expired, so
+this is waiting on a re-login. The hook and MCP paths are covered by the
+end-to-end tests, but a real session is the proof that matters.
+
+### How to install it (for the README)
+
+```
+claude plugin marketplace add Sompalkar/tempo
+claude plugin install tempo@tempo
+```

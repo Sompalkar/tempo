@@ -15,8 +15,13 @@ Ships as a library and as an MCP server so Claude Code, Codex, Cursor, or your
 own agent can use it in one config line.
 
 ```
-npx tempo-mcp        # (after npm publish — for now: npm run build && node dist/mcp.js)
+claude plugin marketplace add Sompalkar/tempo
+claude plugin install tempo@tempo
 ```
+
+That gives Claude Code the four `tempo_*` tools and a hook that recalls
+relevant facts before every prompt. No build step — Node 26 runs the
+TypeScript directly.
 
 ## The idea in one table
 
@@ -107,10 +112,21 @@ const { facts, conflicts } = store.recall({ org: 'acme', key: 'refund.policy' })
 
 `remember` returns what it did: `inserted | corroborated | superseded | backfilled | conflict | skipped-private`.
 
-### As an MCP server (Claude Code, Codex, Cursor, anything)
+### As a Claude Code plugin (hook + tools)
 
 ```
-claude mcp add tempo -e TEMPO_ORG=acme -e TEMPO_WRITER=som -- node /path/to/tempo/dist/mcp.js
+claude plugin marketplace add Sompalkar/tempo
+claude plugin install tempo@tempo
+```
+
+Before every prompt, the hook looks up facts whose key or value mentions a
+word from your prompt and adds them as context. Claude can save new facts
+with `tempo_remember`.
+
+### As an MCP server (Codex, Cursor, anything)
+
+```
+claude mcp add tempo -e TEMPO_ORG=acme -e TEMPO_WRITER=som -- node /path/to/tempo/src/mcp.ts
 ```
 
 Four tools: `tempo_remember`, `tempo_recall`, `tempo_conflicts`, `tempo_resolve`.
@@ -140,7 +156,7 @@ switch for sensitive work, not a visibility flag.
 
 ```
 npm install
-npm test          # builds, then 44 tests: engine, MCP end-to-end, StaleBench guard
+npm test          # builds, then 51 tests: engine, MCP + hook end-to-end, StaleBench guard
 npm run bench     # StaleBench table
 ```
 
