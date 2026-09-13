@@ -477,6 +477,24 @@ export class TempoStore {
     });
   }
 
+  /** Distinct keys in this org, most-used first. Used to steer extraction. */
+  keys(org: string, limit = 300): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT key, COUNT(*) n FROM observations WHERE org = ? GROUP BY key ORDER BY n DESC, key ASC LIMIT ?`,
+      )
+      .all(org, limit) as unknown as { key: string }[];
+    return rows.map((r) => r.key);
+  }
+
+  /** The values currently held for a key (there can be more than one during a conflict). */
+  currentValues(org: string, key: string): string[] {
+    const rows = this.db
+      .prepare(`SELECT value FROM observations WHERE org = ? AND key = ? AND valid_to IS NULL`)
+      .all(org, key) as unknown as { value: string }[];
+    return rows.map((r) => r.value);
+  }
+
   /** Fetch one observation by id (scoped to org). */
   get(org: string, id: string): Observation | null {
     const row = this.db
