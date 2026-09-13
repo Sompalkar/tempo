@@ -33,7 +33,20 @@ function run(cmd: string, args: string[], stdin: string, env: NodeJS.ProcessEnv,
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code === 0) resolve(Buffer.concat(out).toString('utf8'));
-      else reject(new Error(`${cmd} exited ${code}: ${Buffer.concat(err).toString('utf8').slice(0, 500)}`));
+      else {
+        // claude -p reports API problems (usage limit, auth) as JSON on
+        // stdout, not stderr. Show whichever has the message.
+        const stderr = Buffer.concat(err).toString('utf8').trim();
+        const stdout = Buffer.concat(out).toString('utf8').trim();
+        let msg = stderr;
+        try {
+          const j = JSON.parse(stdout) as { result?: string };
+          if (j.result) msg = j.result;
+        } catch {
+          if (!msg) msg = stdout;
+        }
+        reject(new Error(`${cmd} exited ${code}: ${msg.slice(0, 300)}`));
+      }
     });
     child.stdin.end(stdin);
   });

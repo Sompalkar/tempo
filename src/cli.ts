@@ -187,7 +187,8 @@ async function ingest(): Promise<void> {
         void Promise.all(settled).then(() => store.markIngested(org, chunkRef(chunk)));
       } catch (e) {
         failed++;
-        if (failed <= 3) console.error(`  chunk failed: ${(e as Error).message}`);
+        if (failed <= 3) console.error(`\n  chunk failed: ${(e as Error).message}`);
+        if (failed === 3) console.error('  (further failures counted silently; re-run ingest to retry them)');
       }
       done++;
       if (done % 10 === 0 || done === chunks.length) {
