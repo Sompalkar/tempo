@@ -27,7 +27,8 @@
   },
   "bin": {
     "tempo-mcp": "dist/mcp.js",
-    "tempo-hook": "dist/hook.js"
+    "tempo-hook": "dist/hook.js",
+    "tempo": "src/cli.ts"
   },
   "types": "dist/index.d.ts",
   "files": [

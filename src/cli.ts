@@ -1,0 +1,247 @@
+#!/usr/bin/env node
+/**
+ * tempo command line.
+ *
+ *   tempo ingest [options]     read Claude Code sessions -> facts -> memory
+ *   tempo recall <query>       search memory
+ *   tempo conflicts            show facts that disagree
+ *   tempo report               what ingest found: conflicts, supersessions
+ *
+ * Ingest is the only command that costs money (one Haiku call per chunk).
+ * It prints the estimated number of calls and waits for confirmation unless
+ * --yes is passed.
+ */
+import { createInterface } from 'node:readline/promises';
+import { homedir } from 'node:os';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { TempoStore } from './store.ts';
+import { formatFacts } from './format.ts';
+import { extractFacts } from './extract.ts';
+import { chunkSession, findSessions, type Chunk } from './ingest/claude-code.ts';
+import type { RememberAction } from './types.ts';
+
+const args = process.argv.slice(2);
+const cmd = args[0] ?? 'help';
+
+function flag(name: string): boolean {
+  return args.includes(`--${name}`);
+}
+function opt(name: string): string | undefined {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+const dbPath = process.env['TEMPO_DB'] ?? join(homedir(), '.tempo', 'tempo.db');
+const org = process.env['TEMPO_ORG'] ?? 'default';
+mkdirSync(dirname(dbPath), { recursive: true });
+
+function openStore(): TempoStore {
+  return new TempoStore(dbPath);
+}
+
+async function confirm(question: string): Promise<boolean> {
+  if (flag('yes')) return true;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const a = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
+  rl.close();
+  return a === 'y' || a === 'yes';
+}
+
+// ---------------------------------------------------------------------------
+
+async function ingest(): Promise<void> {
+  const projects = opt('project')?.split(',');
+  const limitSessions = Number(opt('sessions') ?? '0') || undefined;
+  const limitChunks = Number(opt('chunks') ?? '0') || undefined;
+  const concurrency = Number(opt('concurrency') ?? '6');
+
+  const findOpts: Parameters<typeof findSessions>[0] = {};
+  if (projects) findOpts.projects = projects;
+  let sessions = findSessions(findOpts);
+  if (limitSessions) sessions = sessions.slice(0, limitSessions);
+
+  let chunks: Chunk[] = [];
+  for (const s of sessions) chunks.push(...chunkSession(s));
+  // Oldest first, so the store learns history in the order it happened.
+  chunks.sort((a, b) => a.at - b.at);
+  if (limitChunks) chunks = chunks.slice(0, limitChunks);
+
+  if (chunks.length === 0) {
+    console.log('No sessions found.');
+    return;
+  }
+
+  console.log(`${sessions.length} session(s), ${chunks.length} chunk(s).`);
+  console.log(`That is ${chunks.length} Haiku call(s). Writing to ${dbPath} (org "${org}").`);
+  if (!(await confirm('Run it?'))) {
+    console.log('Stopped.');
+    return;
+  }
+
+  const store = openStore();
+  const counts: Record<RememberAction, number> = {
+    inserted: 0,
+    corroborated: 0,
+    superseded: 0,
+    backfilled: 0,
+    conflict: 0,
+    'skipped-private': 0,
+  };
+  let dropped = 0;
+  let failed = 0;
+  let done = 0;
+
+  // Extract in parallel (network-bound), write serially (SQLite + the
+  // contradiction rules need a single writer to be correct).
+  const queue = [...chunks];
+  const pending: Promise<void>[] = [];
+
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const chunk = queue.shift();
+      if (!chunk) return;
+      try {
+        const { kept, dropped: bad } = await extractFacts(chunk.text, {
+          sourceLabel: `Claude Code session "${chunk.title}" in ${chunk.project}`,
+        });
+        dropped += bad.length;
+        for (const f of kept) {
+          const input: Parameters<TempoStore['remember']>[0] = {
+            org,
+            key: f.key,
+            value: f.value,
+            source: { writer: `session:${chunk.sessionId.slice(0, 8)}`, kind: 'session', ref: `${chunk.sessionId}#${chunk.index}` },
+            now: chunk.at,
+          };
+          if (f.validFrom) input.validFrom = Date.parse(f.validFrom);
+          counts[store.remember(input).action]++;
+        }
+      } catch (e) {
+        failed++;
+        if (failed <= 3) console.error(`  chunk failed: ${(e as Error).message}`);
+      }
+      done++;
+      if (done % 25 === 0 || done === chunks.length) {
+        process.stderr.write(`\r  ${done}/${chunks.length} chunks…`);
+      }
+    }
+  };
+  for (let i = 0; i < concurrency; i++) pending.push(worker());
+  await Promise.all(pending);
+  process.stderr.write('\n');
+
+  console.log('\nDone.');
+  for (const [k, v] of Object.entries(counts)) if (v) console.log(`  ${k}: ${v}`);
+  if (dropped) console.log(`  malformed facts dropped: ${dropped}`);
+  if (failed) console.log(`  chunks that failed: ${failed}`);
+  store.close();
+}
+
+function recall(): void {
+  const query = args.slice(1).filter((a) => !a.startsWith('--')).join(' ');
+  const store = openStore();
+  const input: Parameters<TempoStore['recall']>[0] = { org, limit: Number(opt('limit') ?? '20') };
+  if (query) input.query = query;
+  if (opt('key')) input.key = opt('key')!;
+  if (opt('valid-at')) input.validAt = Date.parse(opt('valid-at')!);
+  if (opt('as-of')) input.asOf = Date.parse(opt('as-of')!);
+  if (flag('history')) input.includeHistory = true;
+  const r = store.recall(input);
+  console.log(formatFacts(r.facts, r.conflicts));
+  store.close();
+}
+
+function conflicts(): void {
+  const store = openStore();
+  const list = store.conflicts(org, { status: (opt('status') as 'open' | 'resolved' | 'all') ?? 'open' });
+  if (list.length === 0) {
+    console.log('No conflicts.');
+  } else {
+    for (const c of list) {
+      const a = store.get(org, c.aId);
+      const b = store.get(org, c.bId);
+      console.log(`${c.status}  ${c.key}`);
+      console.log(`   A  ${a?.value ?? '?'}`);
+      console.log(`      ${a?.source.writer ?? '?'} · ${a?.source.ref ?? ''}`);
+      console.log(`   B  ${b?.value ?? '?'}`);
+      console.log(`      ${b?.source.writer ?? '?'} · ${b?.source.ref ?? ''}`);
+      if (c.winnerId) console.log(`   winner: ${c.winnerId === c.aId ? 'A' : 'B'} (${c.reason})`);
+      console.log();
+    }
+  }
+  store.close();
+}
+
+/** What did ingest actually find? The interesting part is disagreement over time. */
+function report(): void {
+  const store = openStore();
+  const all = store.recall({ org, limit: 100000, includeHistory: true });
+  const open = store.conflicts(org, { status: 'open' });
+  const resolved = store.conflicts(org, { status: 'resolved' });
+  const superseded = all.facts.filter((f) => f.status === 'superseded');
+  const corroborated = all.facts.filter((f) => f.confirmations > 1);
+
+  console.log(`facts stored ............ ${all.facts.length}`);
+  console.log(`still current ........... ${all.facts.filter((f) => f.status !== 'superseded').length}`);
+  console.log(`superseded (changed) .... ${superseded.length}`);
+  console.log(`confirmed by 2+ sources . ${corroborated.length}`);
+  console.log(`open conflicts .......... ${open.length}`);
+  console.log(`auto-resolved ........... ${resolved.length}`);
+
+  if (superseded.length) {
+    console.log('\nThings that changed over time:');
+    for (const f of superseded.slice(0, 10)) {
+      const now = store.recall({ org, key: f.key, limit: 1 }).facts[0];
+      console.log(`  ${f.key}`);
+      console.log(`    was: ${f.value}`);
+      console.log(`    now: ${now?.value ?? '(nothing current)'}`);
+    }
+  }
+  if (open.length) {
+    console.log('\nDisagreements nobody has settled:');
+    for (const c of open.slice(0, 10)) {
+      console.log(`  ${c.key}`);
+      console.log(`    A: ${store.get(org, c.aId)?.value}`);
+      console.log(`    B: ${store.get(org, c.bId)?.value}`);
+    }
+  }
+  store.close();
+}
+
+// ---------------------------------------------------------------------------
+
+const help = `tempo — memory that knows when things stopped being true
+
+  tempo ingest [--project <slug,...>] [--sessions N] [--chunks N] [--yes]
+        Read Claude Code sessions, pull out durable facts, store them.
+        Costs one Haiku call per chunk. Needs ANTHROPIC_API_KEY.
+
+  tempo recall <words...> [--key <k>] [--valid-at <date>] [--as-of <date>] [--history]
+        Search memory. --valid-at asks "what was true then";
+        --as-of asks "what did we know then".
+
+  tempo conflicts [--status open|resolved|all]
+        Facts that disagree.
+
+  tempo report
+        What ingest found: what changed, what disagrees.
+
+Environment: TEMPO_DB (${dbPath}), TEMPO_ORG (${org}), ANTHROPIC_API_KEY`;
+
+switch (cmd) {
+  case 'ingest':
+    await ingest();
+    break;
+  case 'recall':
+    recall();
+    break;
+  case 'conflicts':
+    conflicts();
+    break;
+  case 'report':
+    report();
+    break;
+  default:
+    console.log(help);
+}
