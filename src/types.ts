@@ -86,7 +86,7 @@ export interface RecallInput {
   org: string;
   /** Exact key, or a prefix if it ends with "." */
   key?: string;
-  /** Plain-text search over values (case-insensitive substring). */
+  /** Plain-text search over keys and values (case-insensitive substring). */
   query?: string;
   /** "What was true at this moment?" Defaults to now. */
   validAt?: number;

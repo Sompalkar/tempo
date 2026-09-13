@@ -349,8 +349,10 @@ export class TempoStore {
       }
     }
     if (input.query !== undefined && input.query !== '') {
-      where.push(`value LIKE ? ESCAPE '\\' COLLATE NOCASE`);
-      args.push('%' + escapeLike(input.query) + '%');
+      // Search keys and values. A prompt says "deploy"; the key is "deploy.command".
+      where.push(`(value LIKE ? ESCAPE '\\' COLLATE NOCASE OR key LIKE ? ESCAPE '\\' COLLATE NOCASE)`);
+      const pat = '%' + escapeLike(input.query) + '%';
+      args.push(pat, pat);
     }
 
     const rows = this.db

@@ -1,0 +1,11 @@
+{
+  "name": "tempo",
+  "owner": { "name": "Som Palkar" },
+  "plugins": [
+    {
+      "name": "tempo",
+      "source": "./",
+      "description": "Team memory that knows when things stopped being true. Recalls relevant facts before each prompt and adds tempo_remember / tempo_recall / tempo_conflicts / tempo_resolve tools."
+    }
+  ]
+}

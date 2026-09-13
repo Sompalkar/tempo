@@ -263,12 +263,13 @@ describe('recall: search', () => {
     expect(s.recall({ org: 'acme', key: 'rate.100%.', asOf: T(2), validAt: T(2) }).facts.map((f) => f.key)).toEqual(['rate.100%.limit']);
   });
 
-  it('query searches values, case-insensitively', () => {
+  it('query searches keys and values, case-insensitively', () => {
     const s = fresh();
     s.remember({ org: 'acme', key: 'a', value: 'Use Postgres 16', source: alice, now: T(1) });
     s.remember({ org: 'acme', key: 'b', value: 'Use Redis', source: alice, now: T(1) });
-    const { facts } = s.recall({ org: 'acme', query: 'postgres', asOf: T(2), validAt: T(2) });
-    expect(facts.map((f) => f.key)).toEqual(['a']);
+    s.remember({ org: 'acme', key: 'deploy.command', value: 'make ship', source: alice, now: T(1) });
+    expect(s.recall({ org: 'acme', query: 'postgres', asOf: T(2), validAt: T(2) }).facts.map((f) => f.key)).toEqual(['a']);
+    expect(s.recall({ org: 'acme', query: 'Deploy', asOf: T(2), validAt: T(2) }).facts.map((f) => f.key)).toEqual(['deploy.command']);
   });
 });
 
