@@ -44,16 +44,31 @@ NOT durable, do not extract:
 - Anything you had to guess at.
 
 Rules:
-1. key: dotted, lowercase, stable. The SAME fact discussed on two different days must produce the SAME key. Prefer "deploy.command" over "how-we-deploy-the-app".
-2. value: short, self-contained, readable on its own with no surrounding context.
+1. key: dotted, lowercase, stable, and SPECIFIC to the one thing the fact is about. The same fact discussed on two different days must produce the same key. Prefer "deploy.command" over "how-we-deploy-the-app", and "worker.poll_interval" over "backend.database" for a fact about polling.
+2. value: ONE fact, short and self-contained, readable with no surrounding context. Never join several facts with semicolons or commas — emit them as separate entries under separate keys. "Uses FastAPI; worker polls every 5s" is two facts, not one.
 3. validFrom: fill this in ONLY when the text states when the fact became true ("since March", "as of the 1st", "we switched last Tuesday"). If the text does not say, return an empty string. Do NOT use the date the text was written. Do NOT guess. An empty validFrom is the correct, expected answer most of the time.
 4. quote: copy the exact words the fact came from, so a human can check you.
 5. If the text contains no durable facts, return an empty list. That is a good answer, not a failure.`;
 
-/** Build the user message. Kept separate so it can be tested without a network call. */
-export function buildPrompt(text: string, opts: { sourceLabel?: string } = {}): string {
+/**
+ * Build the user message. Kept separate so it can be tested without a
+ * network call.
+ *
+ * `knownKeys` matters more than it looks: without it the model invents a new
+ * key for the same topic in every chunk (`auth.clerk.instance`,
+ * `auth.clerk_instance`, `backend.auth.clerk`), and memory fragments into
+ * near-duplicates that never meet each other.
+ */
+export function buildPrompt(
+  text: string,
+  opts: { sourceLabel?: string; knownKeys?: string[] } = {},
+): string {
   const label = opts.sourceLabel ? `Source: ${opts.sourceLabel}\n\n` : '';
-  return `${label}Text:\n"""\n${text}\n"""\n\nPull out the durable facts.`;
+  const keys =
+    opts.knownKeys && opts.knownKeys.length > 0
+      ? `Keys already in memory:\n${opts.knownKeys.map((k) => `  ${k}`).join('\n')}\n\nIf a fact is about EXACTLY the topic one of these names, reuse that key character for character rather than inventing a variant. If it is about anything else, make a new specific key. Never file a fact under a key that does not describe it — a wrong key is worse than a new one.\n\n`
+      : '';
+  return `${label}${keys}Text:\n"""\n${text}\n"""\n\nPull out the durable facts.`;
 }
 
 /**
@@ -66,7 +81,9 @@ export function sanitize(facts: ExtractedFact[]): { kept: ExtractedFact[]; dropp
   const seen = new Set<string>();
 
   for (const f of facts) {
-    const key = f.key.trim().toLowerCase();
+    // `auth.clerk_instance` and `auth.clerk.instance` are the same topic.
+    // Pick one spelling so they land on the same key.
+    const key = f.key.trim().toLowerCase().replace(/_/g, '.');
     const value = f.value.trim();
 
     if (!key || !value) {
@@ -99,6 +116,8 @@ export interface ExtractOptions {
   client?: Anthropic;
   model?: string;
   sourceLabel?: string;
+  /** Keys already in the store, so the model reuses them instead of inventing variants. */
+  knownKeys?: string[];
 }
 
 /**
@@ -112,12 +131,16 @@ export async function extractFacts(
 ): Promise<{ kept: ExtractedFact[]; dropped: { fact: ExtractedFact; why: string }[] }> {
   if (!text.trim()) return { kept: [], dropped: [] };
 
+  const promptOpts: { sourceLabel?: string; knownKeys?: string[] } = {};
+  if (opts.sourceLabel !== undefined) promptOpts.sourceLabel = opts.sourceLabel;
+  if (opts.knownKeys !== undefined) promptOpts.knownKeys = opts.knownKeys;
+
   const client = opts.client ?? new Anthropic();
   const response = await client.messages.parse({
     model: opts.model ?? 'claude-haiku-4-5',
     max_tokens: 8000,
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildPrompt(text, opts.sourceLabel !== undefined ? { sourceLabel: opts.sourceLabel } : {}) }],
+    messages: [{ role: 'user', content: buildPrompt(text, promptOpts) }],
     output_config: { format: zodOutputFormat(Extraction) },
   });
 

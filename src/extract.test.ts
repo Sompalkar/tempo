@@ -26,6 +26,20 @@ describe('the prompt', () => {
     expect(p).toContain('hello world');
     expect(p).toContain('slack #eng');
   });
+
+  it('lists known keys but tells the model not to force an unrelated fact into one', () => {
+    const p = buildPrompt('text', { knownKeys: ['deploy.command', 'db.port'] });
+    expect(p).toContain('deploy.command');
+    expect(p).toMatch(/never file a fact under a key that does not describe it/i);
+  });
+
+  it('omits the known-keys section entirely when there are none', () => {
+    expect(buildPrompt('text', { knownKeys: [] })).not.toMatch(/already in memory/i);
+  });
+
+  it('tells the model one fact per entry, not semicolon lists', () => {
+    expect(SYSTEM_PROMPT).toMatch(/Never join several facts with semicolons/i);
+  });
 });
 
 describe('sanitize', () => {
@@ -33,6 +47,11 @@ describe('sanitize', () => {
     const { kept, dropped } = sanitize([f({ key: 'Deploy.Command' })]);
     expect(dropped).toHaveLength(0);
     expect(kept[0]!.key).toBe('deploy.command');
+  });
+
+  it('spells underscores as dots so auth.clerk_instance and auth.clerk.instance meet', () => {
+    const { kept } = sanitize([f({ key: 'auth.clerk_instance' })]);
+    expect(kept[0]!.key).toBe('auth.clerk.instance');
   });
 
   it('keeps an ISO validFrom', () => {
