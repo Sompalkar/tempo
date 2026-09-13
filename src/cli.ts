@@ -20,6 +20,7 @@ import { formatFacts } from './format.ts';
 import { extractFacts } from './extract.ts';
 import { Reconciler } from './reconcile.ts';
 import { chunkSession, findSessions, type Chunk } from './ingest/claude-code.ts';
+import { KeyedQueue } from './ingest/keyed-queue.ts';
 import type { RememberAction } from './types.ts';
 
 const args = process.argv.slice(2);
@@ -114,14 +115,42 @@ async function ingest(): Promise<void> {
 
   // Two stages on purpose.
   //
-  // Extraction is network-bound, so it runs several chunks at once.
-  // Writing is NOT parallel-safe: deciding what a new fact does depends on
-  // what is currently stored, so two workers reading the same empty key at
-  // the same time would both write and invent a contradiction that never
-  // happened. So every write goes through one serialized stage.
+  // Extraction is network-bound and touches no shared state, so it runs
+  // several chunks at once.
+  //
+  // Writing is only parallel-safe ACROSS keys. What a new fact does depends
+  // on what is already stored under its key, so two writes to the same key
+  // must not interleave (JOURNAL, failure #10). Writes to different keys
+  // never look at each other, so they overlap freely. KeyedQueue enforces
+  // exactly that. A fully serialized writer was tried first and fell hours
+  // behind extraction on a real run.
   const queue = [...chunks];
-  const writeQueue: { fact: { key: string; value: string; validFrom: string }; chunk: Chunk }[] = [];
-  let extractionDone = false;
+  const writes = new KeyedQueue(concurrency);
+
+  const writeFact = async (fact: { key: string; value: string; validFrom: string }, chunk: Chunk): Promise<void> => {
+    // Is this just a rewording of something we already hold? If so, write
+    // the EXACT existing string so the engine sees agreement rather than a
+    // new contradiction. The engine stays a string comparison; the
+    // fuzziness lives out here. See reconcile.ts.
+    let value = fact.value;
+    const existing = store.currentValues(org, fact.key);
+    if (existing.length > 0 && !existing.includes(value)) {
+      const match = await reconciler.matchExisting(fact.key, value, existing);
+      if (match !== null) {
+        value = match;
+        reconciled++;
+      }
+    }
+    const input: Parameters<TempoStore['remember']>[0] = {
+      org,
+      key: fact.key,
+      value,
+      source: { writer: `session:${chunk.sessionId.slice(0, 8)}`, kind: 'session', ref: `${chunk.sessionId}#${chunk.index}` },
+      now: chunk.at,
+    };
+    if (fact.validFrom) input.validFrom = Date.parse(fact.validFrom);
+    counts[store.remember(input).action]++;
+  };
 
   const extractor = async (): Promise<void> => {
     for (;;) {
@@ -133,56 +162,26 @@ async function ingest(): Promise<void> {
           knownKeys: store.keys(org, 200),
         });
         dropped += bad.length;
-        for (const fact of kept) writeQueue.push({ fact, chunk });
+        for (const fact of kept) {
+          writes.add(fact.key, () => writeFact(fact, chunk)).catch((e: unknown) => {
+            failed++;
+            if (failed <= 3) console.error(`  write failed: ${(e as Error).message}`);
+          });
+        }
       } catch (e) {
         failed++;
         if (failed <= 3) console.error(`  chunk failed: ${(e as Error).message}`);
       }
       done++;
       if (done % 10 === 0 || done === chunks.length) {
-        process.stderr.write(`\r  extracted ${done}/${chunks.length} chunks, ${writeQueue.length} facts queued…`);
+        process.stderr.write(`\r  extracted ${done}/${chunks.length} chunks…`);
       }
     }
   };
 
-  const writer = async (): Promise<void> => {
-    for (;;) {
-      const item = writeQueue.shift();
-      if (!item) {
-        if (extractionDone) return;
-        await new Promise((r) => setTimeout(r, 50));
-        continue;
-      }
-      const { fact, chunk } = item;
-      // Is this just a rewording of something we already hold? If so, write
-      // the EXACT existing string so the engine sees agreement rather than a
-      // new contradiction. The engine stays a string comparison; the
-      // fuzziness lives out here. See reconcile.ts.
-      let value = fact.value;
-      const existing = store.currentValues(org, fact.key);
-      if (existing.length > 0 && !existing.includes(value)) {
-        const match = await reconciler.matchExisting(fact.key, value, existing);
-        if (match !== null) {
-          value = match;
-          reconciled++;
-        }
-      }
-      const input: Parameters<TempoStore['remember']>[0] = {
-        org,
-        key: fact.key,
-        value,
-        source: { writer: `session:${chunk.sessionId.slice(0, 8)}`, kind: 'session', ref: `${chunk.sessionId}#${chunk.index}` },
-        now: chunk.at,
-      };
-      if (fact.validFrom) input.validFrom = Date.parse(fact.validFrom);
-      counts[store.remember(input).action]++;
-    }
-  };
-
-  const writing = writer();
   await Promise.all(Array.from({ length: concurrency }, () => extractor()));
-  extractionDone = true;
-  await writing;
+  process.stderr.write('\n  finishing writes…');
+  await writes.drain();
   process.stderr.write('\n');
 
   console.log('\nDone.');
