@@ -63,3 +63,48 @@ the *design* says. Re-read the design after the tests pass.
 - `src/store.test.ts` — 23 tests, each named as a sentence. They are the spec.
 - No MCP server yet. No eval yet. No LLM anywhere yet — the engine is fully
   deterministic on purpose, so it can be tested without an API key.
+
+### MCP server
+
+`src/mcp.ts` wraps the store in four tools over stdio. The test for it is
+the real thing: it spawns `dist/mcp.js` as a child process and talks to it
+with the official MCP client. A second test spawns a *second* server
+process as a different writer against the same SQLite file, so we know two
+agents on one machine can share a store without stepping on each other
+(SQLite WAL mode handles the locking).
+
+Small choice worth noting: dates can be passed as ISO strings
+(`"2026-03-01"`) because that is what an LLM will naturally produce. The
+server converts; the engine only ever sees numbers.
+
+### StaleBench
+
+15 scenarios, four groups, three systems. tempo 15/15, last-write-wins
+9/15, append-only 5/15.
+
+The two baselines are not straw men. Each is a faithful model of a common
+design — a KV map with overwrite, and a log you search — and both were
+given writer/ref/org fields so they pass provenance and boundary for free.
+They only fail on time and contradiction, which is the point.
+
+The most telling baseline failures:
+
+- **T5** — last-write-wins learns *old* history late (someone backfills the
+  March policy in June) and it clobbers today's answer. This is a real
+  failure mode when you ingest Slack history after the fact.
+- **C1** — both baselines hide that two agents disagree. Last-write-wins
+  returns one value with no warning; append-only returns both with no
+  warning. Neither tells the reader there is a problem.
+
+Honesty note, also in the README: we wrote the scenarios and the system.
+15/15 proves the engine does what the design says, not that the design is
+the best possible. The value is that the scenarios are specific and an
+adapter is ~50 lines, so real systems can be added and compared.
+
+### Where things stand (end of day 1)
+
+- Engine, MCP server, StaleBench, README, this journal.
+- 44 tests. All deterministic — no API keys, no network.
+- Not done yet: a Claude Code hook that recalls automatically on each
+  prompt; an ingestion path from real session transcripts; npm publish;
+  a GitHub repo.
