@@ -267,3 +267,122 @@ nothing. Fixed by teaching the parser which options take a value.
 
 Small bug, but it is the kind that makes someone try your tool once and
 conclude it does not work.
+
+---
+
+## Day 1, night — running it on real sessions
+
+The first real ingest: 40 chunks from 15 RoboTrain sessions. Extraction
+quality was good — real facts, real provenance. And then the numbers:
+
+```
+inserted: 258   corroborated: 33   conflict: 54
+```
+
+54 conflicts, and almost none were real:
+
+```
+auth.clerk.instance = "Both frontend and backend use Clerk instance driving-tapir-92.clerk.accounts.dev"
+auth.clerk.instance = "driving-tapir-92.clerk.accounts.dev"
+auth.clerk_instance = "driving-tapir-92"
+```
+
+Three sessions saying one thing three ways, plus key drift
+(`auth.clerk.instance` / `auth.clerk_instance` / `backend.auth.clerk`).
+The engine was right — those are different strings — but a tool that cries
+wolf 54 times is a tool nobody keeps installed.
+
+This is hard problem #1 from the essay arriving in person: contradiction
+resolution cannot be string equality.
+
+### Fix: fuzziness outside the engine
+
+The temptation was to make the engine smarter. That would have been a
+mistake — the engine is deterministic, which is the only reason it is
+testable.
+
+Instead, `src/reconcile.ts` sits in front of it. Before writing, it asks:
+is this a rewording of a value we already hold? If yes, it writes **the
+exact existing string**, so the engine sees agreement rather than a new
+contradiction. The engine still only compares strings.
+
+Three tiers, cheapest first:
+1. exact match after normalising case and whitespace
+2. token containment — every distinctive token of the short statement
+   appears in the long one, so the long one is the short one plus prose
+3. an LLM judge, only for pairs the first two cannot settle
+
+On the real run: 64 decided for free, 45 judged, 7 from cache. Most
+comparisons never cost anything.
+
+### Failure #9 — the key fix overcorrected
+
+Telling the extractor "REUSE THE EXACT KEY" fixed key drift and created
+something worse: the model crammed unrelated facts into existing keys.
+
+```
+backend.database
+  A  Connects to Modal and Supabase; worker polls jobs every ~5s
+  B  schema_v2.sql is force-tracked because .gitignore ignores *.sql
+```
+
+Not a contradiction — two unrelated facts under one name. Conflicts went
+*up*, to 82.
+
+Softened to: reuse a key only when the fact is about exactly that topic,
+otherwise make a new one, because "a wrong key is worse than a new one".
+Also told it one fact per entry — "Uses FastAPI; worker polls every 5s" is
+two facts, and joining them guarantees a false conflict later. Down to 37.
+
+### Failure #10 — a race in the ingest pipeline
+
+Still seeing obvious rewordings flagged as conflicts. The reconciler was
+not broken; it was being skipped.
+
+Ingest ran N workers, each doing read-current → reconcile → write. Two
+workers handling the same key at the same time both read *nothing*, both
+reconciled against *nothing*, and both wrote — inventing a contradiction
+that never existed.
+
+Read-then-write is not parallel-safe when the write depends on the read.
+Split into two stages: extraction stays parallel (it is network-bound and
+touches no shared state), while every write goes through one serialized
+consumer. Slower on paper, correct in fact, and the write stage was never
+the bottleneck.
+
+### Failure #11 — the cheap tier was too confident
+
+`"driving-tapir-92"` vs `"...instance is driving-tapir-92.clerk.accounts.dev"`
+share no *exact* token, so tier 2 returned "different" and never asked the
+judge. One is plainly the other spelled out. Now, when nothing is shared,
+it checks whether any token is a prefix or suffix of another before
+declaring a difference — and returns "unknown" so the judge decides.
+
+The asymmetry is deliberate: a wrong "different" costs one visible conflict
+someone can resolve; a wrong "same" silently destroys a fact. When unsure,
+be noisy rather than lossy. The same rule is why a judge failure counts as
+"not the same".
+
+### Where it landed
+
+| run | change | conflicts |
+|---|---|---|
+| 1 | no reconciliation | 54 (nearly all false) |
+| 2 | + reconciler, keys forced | 82 (wrong keys) |
+| 3 | + softened key rule | 37 |
+| 4 | + near-miss check, serialized writes | **16** |
+
+The 16 that remain are real judgement calls, not noise:
+
+- `uvicorn app.main:app` vs `./venv/bin/uvicorn app.main:app` — materially
+  different to act on; someone should decide
+- `backend.python.version` = "3.11" vs "3.11.15" — precision
+- `/health` vs `/api/v1/worker/stats` filed under one key
+
+That is exactly where tempo should stop guessing and ask a person.
+
+**Known limitation, stated plainly:** key drift is reduced, not solved.
+`backend.startup.command` and `backend.launch.command` still coexist. A
+fact filed under two names never meets itself, so a real contradiction
+between them would go unnoticed. Merging near-duplicate keys is the next
+piece of work.
