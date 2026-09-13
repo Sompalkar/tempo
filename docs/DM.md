@@ -14,9 +14,9 @@ Ships as a Claude Code plugin (hook + 4 tools, no API key, one SQLite file) and 
 
 **StaleBench** — 15 scenarios across those four problems. tempo 15/15, last-write-wins 9/15, append-only 5/15. Adapters are ~50 lines; I'd love to see a Glen row.
 
-**On my own history** — ran it over 10 sessions of a real project. [N] facts, [N] changed over time, [N] real disagreements between my own past sessions. One: `uvicorn app.main:app` in June, `./venv/bin/uvicorn app.main:app` in August — the first breaks on a clean machine. I hadn't noticed.
+**On my own history** — ran it over 10 sessions of a real project, on a Pro subscription, no API key. 1,262 facts, 14 that changed over time, 9 real disagreements between my own past sessions. One change: `uvicorn app.main:app` → `./venv/bin/uvicorn app.main:app`, weeks apart — the first breaks on a clean machine. I hadn't noticed. It also reconstructed my test count going 15 → 35 → 54 → 62 → 63 across five sessions.
 
-Journal of 13 bugs I found and fixed along the way, including the one where my benchmark was passing only because I'd unconsciously worked around the bug in the adapter.
+Journal of 16 bugs I found and fixed along the way, including the one where my benchmark was passing only because I'd unconsciously worked around the bug in the adapter.
 
 Repo: github.com/Sompalkar/tempo
 2-min demo: [link]
@@ -29,7 +29,6 @@ Would love 20 minutes to hear where this is naive vs. what you've actually hit i
 
 ## Notes to self before sending
 
-- Fill in the three [N]s from `tempo report`.
 - Record the demo (docs/DEMO.md), upload, paste the link.
 - Re-read the README once as him: does the first screen make the idea obvious?
 - Don't oversell. "Where this is naive" is the strongest line — it invites the conversation.

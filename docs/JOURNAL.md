@@ -468,3 +468,41 @@ Second cost: the "is this a rewording?" judge made one CLI call per
 ambiguous *pair*. A candidate with three ambiguous existing values meant
 three spawns. Now it is one call per candidate with a numbered list, and
 the model returns an index. Same cache, fewer processes.
+
+### Failure #15 — three "conflicts" that were the same config value
+
+After the 10-session run, 12 open conflicts. Three of them:
+
+```
+Logs are retained for 72 hours.     vs   LOG_RETENTION_HOURS: 72
+Old logs are pruned every 60 minutes.  vs   LOG_PRUNE_INTERVAL_MINUTES: 60
+```
+
+Plainly one fact each. They never reached the judge — the cheap tier
+declared them different on its own, for two dumb reasons: `"hours."` kept
+its full stop (dots are allowed, for hostnames) so it did not match
+`hours`; and `72` was dropped as "too short" when the number *is* the
+fact.
+
+Tokenizer fixes: strip trailing sentence punctuation, keep numbers of any
+length, and treat an identifier as also its parts (`log_retention_hours`
+says `hours`).
+
+And a new command, `tempo reconcile`: re-judge open conflicts in place,
+fold the rewordings, keep the real ones. Cheap — one judge call per
+conflict, no re-extraction. Ran it: 3 merged, 9 kept. The 9 are arguable
+(a value vs a description of the fallback rule; two fields under one
+key). Arguable is the right place to stop and ask a person.
+
+### Failure #16 — a subscription has a ceiling
+
+867 chunks in one go hit the Pro plan's 5-hour usage window; 846 failed.
+Not a bug in tempo, but a real constraint the README now states: ingest in
+slices (`--chunks 150`), re-run later, it resumes. The idempotency work
+from day 2 made this a one-line answer instead of a redesign.
+
+### Where things stand
+
+- 113 tests. Plugin needs no key. Ingest runs on the subscription.
+- Real report from 10 sessions in `bench/REPORT-robotrain.md`.
+- Left to do: record the demo, send the DM.

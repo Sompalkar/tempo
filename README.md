@@ -132,7 +132,37 @@ The extractor is told: if the text does not say *when* a fact became true,
 leave the date empty. Inventing a date would hand the engine a fake reason
 to pick a winner.
 
-<!-- FULL_RUN_NUMBERS -->
+### What it found in my own history
+
+10 Claude Code sessions of one real project (RoboTrain), 171 chunks, run
+entirely on a Claude Pro subscription:
+
+```
+facts stored ............ 1262
+superseded (changed) .... 14
+confirmed by 2+ sources . 78
+open conflicts .......... 9      (12 before `tempo reconcile` folded 3 rewordings)
+```
+
+Things it noticed changing over time, that I had not:
+
+```
+robotrain.backend.modal.functions.deployed
+  was: Three Modal functions are deployed: train_a100, train_hf_a100, train_custom_a100
+  now: Six Modal training functions deployed: train_a100, train_h100, train_hf_a100, ...
+
+robotrain.backend.tests.count
+  15 → 35 → 54 → 62 → 63     (five sessions, one timeline)
+
+robotrain.backend.uvicorn.command
+  was: uvicorn app.main:app --host 127.0.0.1 --port 8000
+  now: ./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+That last one breaks on a clean machine. Two sessions, weeks apart. The
+full report and the 9 open disagreements are in
+[bench/REPORT-robotrain.md](bench/REPORT-robotrain.md).
+
 
 ## Using it
 
