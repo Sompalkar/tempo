@@ -1,34 +1,58 @@
 # Demo script
 
-Two minutes. Every command below was run for real; nothing is mocked.
+About two minutes. Lines in **bold** are what you say. Everything else is
+what you type or what shows up on screen. Every command here was run for
+real; the outputs are the real outputs.
 
-## Setup (off camera)
+Before recording, in the terminal:
 
 ```bash
-claude plugin marketplace add Sompalkar/tempo
-claude plugin install tempo@tempo
 export TEMPO_DB=~/.tempo/demo.db TEMPO_ORG=acme
+rm -f ~/.tempo/demo.db*
 ```
 
-## Part 1 — two agents disagree (45s)
+---
 
-Three separate Claude Code sessions, three different writers, one shared memory.
+## Open
 
-**Session 1 — Alice**
+**Hi Nikos. I read your post about single-tenant memory being the wrong
+default. You listed four things that break when a company's agents share
+one memory — contradictions, time, provenance, boundaries — and said most
+tools just skip them. I wanted to see what it takes to not skip them. This
+is tempo. Let me show you two things it does, then what it found in my
+own history.**
+
+---
+
+## Scene 1 — two agents disagree
+
+**First one. I've got three Claude Code sessions here, all pointed at the
+same memory file. Think of them as three people on a team.**
+
+**Alice saves the deploy command.**
+
 ```bash
 echo "Use tempo_remember to store key 'deploy.command' with value 'make deploy'." \
   | TEMPO_WRITER=agent-alice claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
 ```
 > Tempo inserted the fact.
 
-**Session 2 — Bob**
+**Fine. Now Bob, a different session, saves a different deploy command. Maybe
+he's on an older branch, maybe he's right and Alice is wrong — nobody knows
+yet.**
+
 ```bash
 echo "Use tempo_remember to store key 'deploy.command' with value './scripts/ship.sh'." \
   | TEMPO_WRITER=agent-bob claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
 ```
 > The tool returned a conflict — there's an existing fact that deploy.command is "make deploy".
 
-**Session 3 — Carol, who just wants to deploy**
+**See that. It didn't overwrite Alice. It didn't pick Bob because he was
+last. It said: these two disagree, and I'm keeping both.**
+
+**Now Carol. She's just trying to ship something and asks the obvious
+question.**
+
 ```bash
 echo "What is our deploy command? Check team memory first." \
   | TEMPO_WRITER=agent-carol claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_recall
@@ -39,18 +63,29 @@ echo "What is our deploy command? Check team memory first." \
 >
 > Neither is marked as the authoritative answer. **You need to clarify which one is actually correct.**
 
-**The point:** every other memory tool would have told Carol `./scripts/ship.sh` with total confidence, because Bob wrote last. tempo told her the truth: two agents disagree, here's who said what, go ask.
+**That's the whole idea in one screen. Every memory tool I've tried would
+have told Carol "ship.sh" with total confidence, because Bob wrote last.
+tempo told her the truth: two people disagree, here's who said what, go
+ask. And when someone does settle it, the answer and the reason get
+saved too.**
 
-## Part 2 — time travel (45s)
+---
 
-**Store a policy that changed**
+## Scene 2 — time
+
+**Second thing. Facts change. Your example was the refund policy — 30 days
+in March, 14 days in June. Most memory just keeps the latest one and
+forgets the old one ever existed.**
+
 ```bash
 echo "tempo_remember: key 'refund.policy', value '30 days', validFrom '2026-03-01'. Then key 'refund.policy', value '14 days', validFrom '2026-06-01'." \
   | claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
 ```
 > Call 1: inserted. Call 2: superseded.
 
-**Ask about the past**
+**Superseded — not deleted. The March fact is still there, it just has an
+end date now. So I can ask about the past.**
+
 ```bash
 echo "A customer is disputing an April 2026 charge. What was our refund policy then, and what is it now?" \
   | claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_recall
@@ -58,28 +93,81 @@ echo "A customer is disputing an April 2026 charge. What was our refund policy t
 > April 2026: **30 days** (superseded June 1)
 > Today: **14 days**
 
-**The point:** the March fact was not overwritten. It was *closed*, with the date it stopped being true, and it still answers questions about April. A last-write-wins store would say "14 days" and the customer would get the wrong answer.
+**Right answer for April, right answer for today. That's the time-travel
+your hundred-PR replay needed — you rolled memory back to before each PR.
+Here it's just a query parameter.**
 
-## Part 3 — on my own history (30s)
+---
+
+## Scene 3 — my own history
+
+**Okay, that's the toy. Here's the part I actually care about. I pointed
+this at my own Claude Code transcripts — ten sessions from one real project
+— and had it pull out every durable fact. Commands, config, decisions.**
 
 ```bash
 TEMPO_ORG=som tempo report
 ```
+> facts stored ............ 1262
+> superseded (changed) .... 14
+> confirmed by 2+ sources . 78
+> open conflicts .......... 9
 
-Show the real numbers from ingesting 68 of my own Claude Code sessions:
-facts found, things that changed over time, disagreements between my own
-past sessions that I never noticed.
+**Twelve hundred facts. Fourteen of them changed over time. Look at this one.**
 
-```bash
-TEMPO_ORG=som tempo conflicts
-```
+*(point at it)*
+> robotrain.backend.uvicorn.command
+>   was: uvicorn app.main:app --host 127.0.0.1 --port 8000
+>   now: ./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-Pick one. `uvicorn app.main:app` vs `./venv/bin/uvicorn app.main:app` —
-two sessions three weeks apart, and one of them would fail on a clean
-machine. tempo found it; I hadn't.
+**Two sessions, weeks apart. The first one works on my machine and breaks on
+a clean one. I had no idea I'd changed it. tempo noticed.**
 
-## Close (10s)
+**And this one — it reconstructed my test count across five different
+sessions.**
 
-- Repo: github.com/Sompalkar/tempo
-- 96 tests, StaleBench 15/15 vs last-write-wins 9/15
-- `docs/JOURNAL.md`: 11 bugs found and fixed, written up honestly — including the one where the benchmark was passing only because I'd unconsciously worked around the bug in the adapter.
+> robotrain.backend.tests.count
+>   15 → 35 → 54 → 62 → 63
+
+**Nobody wrote that timeline. It fell out of the data.**
+
+**Nine open disagreements. Some are real — one session says the queue
+default is 30 minutes, another describes the fallback rule without the
+number. tempo doesn't pretend to know which matters. It flags it and
+moves on.**
+
+---
+
+## Close
+
+**So: two clocks on every fact, a source on every fact, and a hard rule
+that a guessed timestamp is never a reason to pick a winner. About six
+hundred lines. One SQLite file. Runs as a Claude Code plugin with no API
+key.**
+
+**There's a small benchmark in the repo — fifteen scenarios across your
+four problems. tempo passes all fifteen. A last-write-wins store passes
+nine. I wrote both the test and the thing being tested, so take that with
+salt — but adapters are fifty lines and I'd genuinely like to see a Glen
+row.**
+
+**There's also a journal of every bug I hit building it. Sixteen of them.
+One of them, the benchmark was passing only because I'd unconsciously
+worked around the bug in the test adapter. That one's worth reading.**
+
+**Repo's at github.com/Sompalkar/tempo. I'd love twenty minutes to hear
+where this is naive compared to what you've actually run into inside
+Glen. Thanks.**
+
+---
+
+## Notes before you hit record
+
+- Run the setup lines first so the demo DB is empty.
+- Scene 3 uses the `som` org, which already has the RoboTrain data. Don't
+  reset that one.
+- If a `claude -p` call takes a few seconds, just wait. Don't fill the
+  silence.
+- You don't have to say every bold line word for word. Say it how you'd
+  say it. The points that matter are: *it kept both*, *it didn't delete
+  March*, *it found something in my own history I'd missed*.
