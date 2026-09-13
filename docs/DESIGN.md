@@ -127,14 +127,50 @@ recall({ org, key?, query?, validAt?, asOf? })
   that happened after `asOf`. So an as-of query from before a fact was
   replaced still sees the old fact as current. This is what makes honest
   replay possible.
+- `includeHistory` — return the whole timeline for the matched keys,
+  ignoring `validAt`. Off by default.
 
 Every returned fact carries a `status`:
 
 - `current` — true at `validAt`, no open conflict
 - `conflicted` — true at `validAt`, but another current fact disagrees
-- `superseded` — was true, has since been replaced (only if you ask for history)
+- `superseded` — true at `validAt`, but replaced by something newer since
+
+That last one is a **label, not a filter**. If you ask about April and the
+April fact was replaced in June, you still get the April fact — it is the
+answer to your question. The label just tells you it is no longer current.
+(An earlier version hid superseded facts unless you asked for history. That
+made time-travel queries return nothing by default. See JOURNAL, failure #7.)
 
 ---
+
+## 5b. Rewordings are not disagreements
+
+The engine compares values with `===`. That is deliberate — it keeps the
+engine deterministic and testable. But two agents describing one fact
+rarely produce identical strings:
+
+```
+"driving-tapir-92.clerk.accounts.dev"
+"Both frontend and backend use Clerk instance driving-tapir-92.clerk.accounts.dev"
+```
+
+Treating those as a conflict is noise, and on the first real ingest it
+was most of the noise: 54 conflicts, almost none real.
+
+The rule: **fuzziness lives outside the engine.** `src/reconcile.ts` runs
+before a write and asks "is this a rewording of a value we already hold?"
+If yes, it writes the *exact existing string*, so the engine sees
+agreement. The engine never learns about fuzzy matching.
+
+Three tiers, cheapest first:
+
+1. exact match after normalising case and whitespace
+2. the short statement's distinctive tokens all appear in the long one
+3. an LLM judge, only for pairs the first two cannot settle
+
+When unsure, it says "different". A wrong "different" is one visible
+conflict a person can resolve. A wrong "same" silently loses a fact.
 
 ## 6. Boundaries
 

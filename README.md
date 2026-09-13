@@ -59,6 +59,20 @@ or a writer correcting itself). Otherwise it tells you two agents disagree and
 lets you — or a policy you opt into — resolve it. The resolution and its reason
 are kept forever.
 
+### Rewordings are not disagreements
+
+Two agents rarely describe one fact with identical strings. Before a write,
+tempo checks whether the new value is just a rewording of one it already
+holds — exact match first, then token containment, then a small LLM judge
+only for the pairs those can't settle. If so it writes the existing string,
+so the engine sees agreement. The engine itself stays a deterministic string
+comparison; the fuzziness lives in front of it, where it can fail safe
+("different" when unsure, never "same").
+
+On a real ingest this took false conflicts from 54 down to 16, and the 16
+that remain are genuine judgement calls (`uvicorn` vs `./venv/bin/uvicorn`,
+`3.11` vs `3.11.15`).
+
 Full design with reasoning: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## StaleBench
@@ -89,6 +103,27 @@ men — they get provenance and org scoping for free so they are only tested on
 the hard part. The useful thing is that adding a real system is ~50 lines
 (`src/bench/adapter.ts`). If you maintain a memory tool and think your system
 passes these, add an adapter and open a PR. We will run it and publish the row.
+
+## Run it on your own sessions
+
+tempo can read your Claude Code transcripts, pull out the durable facts
+(commands, decisions, config, gotchas), and tell you what changed over time
+and where your own past sessions disagree with each other.
+
+```
+export ANTHROPIC_API_KEY=...
+tempo ingest             # reads ~/.claude/projects, asks before spending
+tempo report             # what changed, what disagrees
+tempo conflicts          # the disagreements, with who said what
+tempo recall deploy      # search
+```
+
+Ingest costs about one Haiku call per 6KB of transcript, plus a judge call
+for genuinely ambiguous rewordings. The extractor is told: if the text does
+not say *when* a fact became true, leave the date empty. Inventing a date
+would hand the engine a fake reason to pick a winner.
+
+<!-- FULL_RUN_NUMBERS -->
 
 ## Using it
 
@@ -148,7 +183,7 @@ switch for sensitive work, not a visibility flag.
 
 - Not a vector database. Search is plain SQL. Embeddings can sit on top; they
   are not the hard part.
-- Not a framework. ~500 lines of engine, four public methods.
+- Not a framework. ~600 lines of engine, six public methods.
 - Not magic. It does not know which of two disagreeing agents is right, and it
   refuses to pretend.
 
@@ -156,7 +191,7 @@ switch for sensitive work, not a visibility flag.
 
 ```
 npm install
-npm test          # builds, then 51 tests: engine, MCP + hook end-to-end, StaleBench guard
+npm test          # builds, then 103 tests: engine, MCP + hook end-to-end, extractor, reconciler, StaleBench guard
 npm run bench     # StaleBench table
 ```
 
