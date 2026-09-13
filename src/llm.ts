@@ -3,7 +3,7 @@
  * backends:
  *
  *   claude   the Claude Code CLI (`claude -p`). Runs on the user's existing
- *            Claude subscription. No API key. Slower (~8s a call). DEFAULT.
+ *            Claude subscription. No API key. ~8s a call. DEFAULT.
  *   api      the Anthropic SDK. Needs ANTHROPIC_API_KEY. Faster, costs credits.
  *
  * The rest of tempo never knows which one it is talking to.
@@ -85,6 +85,11 @@ export function claudeCliLLM(opts: { model?: string; timeoutMs?: number } = {}):
       const env = Object.fromEntries(
         Object.entries(process.env).filter(([k]) => !k.startsWith('CLAUDE_CODE_') && k !== 'ANTHROPIC_BASE_URL'),
       ) as NodeJS.ProcessEnv;
+      // Extraction is "list what is in this text" — no reasoning needed. Left
+      // on, Haiku spent ~2,000 thinking tokens per chunk and each call took
+      // ~30s. Off, ~8s and a third of the cost. Measured, not guessed.
+      env['MAX_THINKING_TOKENS'] = '0';
+      env['DISABLE_THINKING'] = '1';
       const stdout = await run('claude', args, req.user, env, timeout);
       const out = JSON.parse(stdout) as { is_error?: boolean; structured_output?: unknown; result?: string };
       if (out.is_error) throw new Error(`claude -p failed: ${out.result ?? 'unknown error'}`);

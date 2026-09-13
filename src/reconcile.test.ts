@@ -56,8 +56,10 @@ function fakeLLM(answers: Record<string, boolean>) {
     name: 'fake',
     parse: vi.fn(async ({ user }: { user: string }) => {
       asked.push(user);
-      const hit = Object.entries(answers).find(([k]) => user.includes(k));
-      return { same: hit ? hit[1] : false, why: 'test' };
+      // Find which numbered existing line matches an answer marked true.
+      const lines = user.split('\n').filter((l) => /^\[\d+\] /.test(l));
+      const idx = lines.findIndex((l) => Object.entries(answers).some(([k, v]) => v && l.includes(k)));
+      return { sameAs: idx, why: 'test' };
     }),
   } as never;
   return { asked, llm };
@@ -82,20 +84,33 @@ describe('Reconciler', () => {
     expect(f.asked).toHaveLength(0);
   });
 
-  it('calls the model only for the undecidable pair', async () => {
-    const f = fakeLLM({ '5433': false });
+  it('asks the model once, and only about the undecidable candidates', async () => {
+    const f = fakeLLM({});
     const r = new Reconciler({ llm: f.llm });
     const match = await r.matchExisting('db.port', 'the database runs on port 5433', [
       'runs on port 5432',
       'something entirely unrelated here',
     ]);
     expect(match).toBeNull();
-    expect(f.asked).toHaveLength(1); // only the 5432 pair was ambiguous
+    expect(f.asked).toHaveLength(1);
+    expect(f.asked[0]).toContain('[0] runs on port 5432');
+    expect(f.asked[0]).not.toContain('unrelated'); // settled cheaply, not sent
     expect(r.stats.judged).toBe(1);
   });
 
+  it('batches several undecided candidates into one call and picks the right one', async () => {
+    const f = fakeLLM({ 'listens on 5432': true });
+    const r = new Reconciler({ llm: f.llm });
+    const match = await r.matchExisting('db.port', 'the database runs on port 5432', [
+      'runs on port 5433',
+      'listens on 5432',
+    ]);
+    expect(match).toBe('listens on 5432');
+    expect(f.asked).toHaveLength(1);
+  });
+
   it('uses the model verdict when it says the facts are the same', async () => {
-    const f = fakeLLM({ 'Statement B: runs on port 5432': true });
+    const f = fakeLLM({ 'runs on port 5432': true });
     const r = new Reconciler({ llm: f.llm });
     expect(await r.matchExisting('db.port', 'listens on 5432 by default', ['runs on port 5432'])).toBe('runs on port 5432');
   });
