@@ -24,12 +24,28 @@ import type { RememberAction } from './types.ts';
 const args = process.argv.slice(2);
 const cmd = args[0] ?? 'help';
 
+/** Options that take a value. Their value must not be mistaken for a positional word. */
+const VALUED = new Set(['project', 'sessions', 'chunks', 'concurrency', 'limit', 'key', 'valid-at', 'as-of', 'status']);
+
 function flag(name: string): boolean {
   return args.includes(`--${name}`);
 }
 function opt(name: string): string | undefined {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : undefined;
+}
+/** Words after the subcommand that are not options or option values. */
+export function positionals(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a.startsWith('--')) {
+      if (VALUED.has(a.slice(2))) i++; // skip this option's value
+      continue;
+    }
+    out.push(a);
+  }
+  return out;
 }
 
 const dbPath = process.env['TEMPO_DB'] ?? join(homedir(), '.tempo', 'tempo.db');
@@ -139,7 +155,7 @@ async function ingest(): Promise<void> {
 }
 
 function recall(): void {
-  const query = args.slice(1).filter((a) => !a.startsWith('--')).join(' ');
+  const query = positionals(args).join(' ');
   const store = openStore();
   const input: Parameters<TempoStore['recall']>[0] = { org, limit: Number(opt('limit') ?? '20') };
   if (query) input.query = query;
