@@ -92,7 +92,10 @@ export interface RecallInput {
   validAt?: number;
   /** "What did we know at this moment?" Defaults to now. */
   asOf?: number;
-  /** Also return facts that have been superseded. Default false. */
+  /**
+   * Return the whole timeline for the matched keys, ignoring `validAt`.
+   * Default false, which returns only what was true at `validAt`.
+   */
   includeHistory?: boolean;
   limit?: number;
 }

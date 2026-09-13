@@ -30,7 +30,6 @@ export function tempoAdapter(): MemoryAdapter {
         key: op.key,
         validAt: op.validAt,
         asOf: op.asOf,
-        includeHistory: true,
       });
       return facts.map((f) => {
         const r: ReturnedFact = { value: f.value, writer: f.source.writer, conflicted: f.status === 'conflicted' };

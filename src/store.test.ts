@@ -73,9 +73,14 @@ describe('remember: the world changed (supersede)', () => {
     expect(now.facts.map((f) => f.value)).toEqual(['14 days']);
     expect(now.facts[0]!.status).toBe('current');
 
-    // With history: both, old one marked superseded... but only if it was true at validAt.
-    const hist = s.recall({ org: 'acme', key: 'refund.policy', asOf: T(11), validAt: T(5), includeHistory: true });
-    expect(hist.facts.map((f) => [f.value, f.status])).toEqual([['30 days', 'superseded']]);
+    // Asking about the past returns what was true then — no extra flag needed.
+    // The 'superseded' label says it was replaced later; it does not hide it.
+    const past = s.recall({ org: 'acme', key: 'refund.policy', asOf: T(11), validAt: T(5) });
+    expect(past.facts.map((f) => [f.value, f.status])).toEqual([['30 days', 'superseded']]);
+
+    // includeHistory returns the whole timeline regardless of validAt.
+    const hist = s.recall({ org: 'acme', key: 'refund.policy', asOf: T(11), validAt: T(11), includeHistory: true });
+    expect(hist.facts.map((f) => f.value).sort()).toEqual(['14 days', '30 days']);
   });
 
   it('the same writer contradicting itself on the same day is treated as a self-correction', () => {
@@ -99,7 +104,7 @@ describe('remember: learning history (backfill)', () => {
     const now = s.recall({ org: 'acme', key: 'refund.policy', asOf: T(13), validAt: T(13) });
     expect(now.facts.map((f) => f.value)).toEqual(['14 days']);
 
-    const past = s.recall({ org: 'acme', key: 'refund.policy', asOf: T(13), validAt: T(5), includeHistory: true });
+    const past = s.recall({ org: 'acme', key: 'refund.policy', asOf: T(13), validAt: T(5) });
     expect(past.facts.map((f) => f.value)).toEqual(['30 days']);
   });
 
@@ -107,7 +112,7 @@ describe('remember: learning history (backfill)', () => {
     const s = fresh();
     s.remember({ org: 'acme', key: 'oncall', value: 'alice', source: alice, validFrom: T(1), validTo: T(8), now: T(20) });
     expect(s.recall({ org: 'acme', key: 'oncall', asOf: T(21), validAt: T(21) }).facts).toHaveLength(0);
-    expect(s.recall({ org: 'acme', key: 'oncall', asOf: T(21), validAt: T(3), includeHistory: true }).facts[0]!.value).toBe('alice');
+    expect(s.recall({ org: 'acme', key: 'oncall', asOf: T(21), validAt: T(3) }).facts[0]!.value).toBe('alice');
   });
 });
 
@@ -181,7 +186,7 @@ describe('remember: real disagreement (conflict)', () => {
     const closed = s.conflicts('acme', { status: 'resolved' }).find((c) => c.reason?.startsWith('both-superseded'));
     expect(closed).toBeDefined();
     expect(closed!.winnerId).toBe(r.id);
-    const { facts, conflicts } = s.recall({ org: 'acme', key: 'k', asOf: T(6), validAt: T(6), includeHistory: true });
+    const { facts, conflicts } = s.recall({ org: 'acme', key: 'k', asOf: T(6), validAt: T(6) });
     expect(conflicts).toHaveLength(0);
     expect(facts.map((f) => f.value)).toEqual(['C']);
   });
@@ -202,7 +207,7 @@ describe('recall: the two clocks', () => {
     s.remember({ org: 'acme', key: 'p', value: 'v1', source: alice, validFrom: T(1), now: T(1) });
     s.remember({ org: 'acme', key: 'p', value: 'v2', source: alice, validFrom: T(10), now: T(10) });
     const q = (validAt: number) =>
-      s.recall({ org: 'acme', key: 'p', asOf: T(20), validAt, includeHistory: true }).facts.map((f) => f.value);
+      s.recall({ org: 'acme', key: 'p', asOf: T(20), validAt }).facts.map((f) => f.value);
     expect(q(T(5))).toEqual(['v1']);
     expect(q(T(15))).toEqual(['v2']);
   });

@@ -372,13 +372,18 @@ export class TempoStore {
       const effectiveValidTo = o.closedAt !== null && o.closedAt > asOf ? null : o.validTo;
       const effectiveSupersededBy = o.closedAt !== null && o.closedAt > asOf ? null : o.supersededBy;
 
-      // Valid-at: was it true at `validAt`?
-      const trueAtValidAt =
-        o.validFrom <= validAt && (effectiveValidTo === null || effectiveValidTo > validAt);
-      if (!trueAtValidAt) continue;
+      // Valid-at: was it true at `validAt`? A fact that was true then IS the
+      // answer to a question about then, even if something replaced it later.
+      // `includeHistory` skips this filter to return the whole timeline.
+      if (!input.includeHistory) {
+        const trueAtValidAt =
+          o.validFrom <= validAt && (effectiveValidTo === null || effectiveValidTo > validAt);
+        if (!trueAtValidAt) continue;
+      }
 
+      // 'superseded' is a label, not a filter: it says this fact was replaced
+      // at some point after it stopped being true.
       const superseded = effectiveSupersededBy !== null;
-      if (superseded && !input.includeHistory) continue;
 
       facts.push({ ...o, validTo: effectiveValidTo, supersededBy: effectiveSupersededBy, status: superseded ? 'superseded' : 'current' });
     }
