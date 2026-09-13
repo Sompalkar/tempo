@@ -198,3 +198,72 @@ end-to-end tests, but a real session is the proof that matters.
 claude plugin marketplace add Sompalkar/tempo
 claude plugin install tempo@tempo
 ```
+
+---
+
+## Day 1, evening — the live demo found the worst bug so far
+
+### The demo worked
+
+Three real Claude Code sessions, three different writers, one shared store:
+
+1. `agent-alice` → `tempo_remember` deploy.command = "make deploy" → **inserted**
+2. `agent-bob` → same key, "./scripts/ship.sh" → **conflict**
+3. `agent-carol` asked "what is our deploy command?" and got both, flagged.
+   Its answer: *"there's a conflict... Neither is marked as the
+   authoritative answer. You need to clarify which one is actually
+   correct."*
+
+That last line is the whole product in one sentence. A normal memory tool
+would have told Carol "./scripts/ship.sh" with total confidence.
+
+### Failure #7 — time travel silently returned nothing
+
+Then the second half of the demo: store a refund policy that was "30 days"
+from March and "14 days" from June, and ask an agent "what was the policy
+in April?"
+
+It answered **"No refund policy on record for that date."**
+
+The data was stored perfectly — dumping the table showed the 30-day fact
+with valid_from = March 1 and valid_to = June 1, exactly right. The bug
+was in `recall`: after correctly filtering to facts true at `validAt`, it
+then dropped any fact with `superseded_by` set unless you passed
+`includeHistory: true`.
+
+That is nonsense. A fact that was true in April **is** the answer to a
+question about April. Being replaced in June does not make it history you
+have to opt into. The flagship feature — the one the whole design is built
+around — returned an empty result by default.
+
+The fix: remove that second filter. The valid-time filter already excludes
+anything that stopped being true before `validAt`. `superseded` goes back
+to being a *label* ("this was replaced later"), not a filter.
+`includeHistory` was redefined to mean something actually useful: return
+the whole timeline for a key, ignoring `validAt`.
+
+**The uncomfortable part.** StaleBench was passing T1 and P3 — the exact
+scenarios this bug breaks. Why? Because my tempo adapter passed
+`includeHistory: true` on every read. I wrote the adapter and the engine on
+the same day and unconsciously compensated in the adapter for the engine's
+bad default. The benchmark was measuring a configuration no real caller
+would use.
+
+Removing that one line from the adapter made T1 and P3 fail on the old
+engine, and pass on the fixed one. The benchmark now tests the default path.
+
+Lesson, and it is the same one as Failure #1 in a new costume: tests and
+benchmarks written by the same person on the same day as the code will
+quietly agree with the code. The only thing that caught this was driving
+the real product with a real agent and reading the answer as a user would.
+
+### Failure #8 — the CLI ate its own option values
+
+`tempo recall --key refund.policy --valid-at 2026-04-15` returned nothing
+even after the engine fix. The positional-argument parser filtered out
+anything starting with `--` but kept the *values* after them, so the search
+query became the literal string "refund.policy 2026-04-15", which matches
+nothing. Fixed by teaching the parser which options take a value.
+
+Small bug, but it is the kind that makes someone try your tool once and
+conclude it does not work.
