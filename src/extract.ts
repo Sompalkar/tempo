@@ -14,9 +14,8 @@
  *  - Everything except the single API call is a pure function, so the hard
  *    parts are tested without a key and without a network.
  */
-import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { defaultLLM, type StructuredLLM } from './llm.ts';
 
 /** One fact the extractor believes the text asserts. */
 export const ExtractedFact = z.object({
@@ -39,6 +38,7 @@ A durable fact is something that would still be useful to a teammate next month:
 
 NOT durable, do not extract:
 - Anything about one specific task in progress ("the test is failing right now", "I'm on step 3").
+- Momentary state that will be different tomorrow: which branch is checked out, what a grep found just now, what time something connected, how many commits ahead of origin. If it has a timestamp or describes "right now", it is not durable.
 - Restatements of what the code obviously says.
 - Opinions with no decision attached.
 - Anything you had to guess at.
@@ -113,17 +113,16 @@ export function sanitize(facts: ExtractedFact[]): { kept: ExtractedFact[]; dropp
 }
 
 export interface ExtractOptions {
-  client?: Anthropic;
-  model?: string;
+  llm?: StructuredLLM;
   sourceLabel?: string;
   /** Keys already in the store, so the model reuses them instead of inventing variants. */
   knownKeys?: string[];
 }
 
 /**
- * Ask Claude for the facts in a piece of text.
- * Uses Haiku: this is a narrow, high-volume job, and the prompt carries the
- * judgement. Returns sanitized facts plus whatever was dropped and why.
+ * Ask a model for the facts in a piece of text.
+ * Haiku by default: this is a narrow, high-volume job, and the prompt carries
+ * the judgement. Returns sanitized facts plus whatever was dropped and why.
  */
 export async function extractFacts(
   text: string,
@@ -135,16 +134,13 @@ export async function extractFacts(
   if (opts.sourceLabel !== undefined) promptOpts.sourceLabel = opts.sourceLabel;
   if (opts.knownKeys !== undefined) promptOpts.knownKeys = opts.knownKeys;
 
-  const client = opts.client ?? new Anthropic();
-  const response = await client.messages.parse({
-    model: opts.model ?? 'claude-haiku-4-5',
-    max_tokens: 8000,
+  const llm = opts.llm ?? defaultLLM();
+  const parsed = await llm.parse({
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildPrompt(text, promptOpts) }],
-    output_config: { format: zodOutputFormat(Extraction) },
+    user: buildPrompt(text, promptOpts),
+    schema: Extraction,
+    maxTokens: 8000,
   });
-
-  const parsed = response.parsed_output;
   if (!parsed) return { kept: [], dropped: [] };
   return sanitize(parsed.facts);
 }

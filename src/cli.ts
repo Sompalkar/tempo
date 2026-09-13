@@ -19,6 +19,7 @@ import { TempoStore } from './store.ts';
 import { formatFacts } from './format.ts';
 import { extractFacts } from './extract.ts';
 import { Reconciler } from './reconcile.ts';
+import { defaultLLM } from './llm.ts';
 import { chunkSession, findSessions, type Chunk } from './ingest/claude-code.ts';
 import { KeyedQueue } from './ingest/keyed-queue.ts';
 import type { RememberAction } from './types.ts';
@@ -100,7 +101,7 @@ async function ingest(): Promise<void> {
   }
 
   console.log(`${sessions.length} session(s), ${chunks.length} chunk(s)${skipped ? ` (${skipped} already done, skipped)` : ''}.`);
-  console.log(`That is ${chunks.length} Haiku call(s). Writing to ${dbPath} (org "${org}").`);
+  console.log(`That is ${chunks.length} model call(s) via ${defaultLLM().name}. Writing to ${dbPath} (org "${org}").`);
   if (!(await confirm('Run it?'))) {
     console.log('Stopped.');
     store.close();
@@ -119,7 +120,8 @@ async function ingest(): Promise<void> {
   let failed = 0;
   let done = 0;
 
-  const reconciler = new Reconciler();
+  const llm = defaultLLM();
+  const reconciler = new Reconciler({ llm });
   let reconciled = 0;
 
   // Two stages on purpose.
@@ -168,7 +170,8 @@ async function ingest(): Promise<void> {
       try {
         const { kept, dropped: bad } = await extractFacts(chunk.text, {
           sourceLabel: `Claude Code session "${chunk.title}" in ${chunk.project}`,
-          knownKeys: store.keys(org, 200),
+          llm,
+          knownKeys: store.keys(org, 50),
         });
         dropped += bad.length;
         const settled: Promise<unknown>[] = [];
@@ -284,7 +287,8 @@ const help = `tempo — memory that knows when things stopped being true
 
   tempo ingest [--project <slug,...>] [--sessions N] [--chunks N] [--yes]
         Read Claude Code sessions, pull out durable facts, store them.
-        Costs one Haiku call per chunk. Needs ANTHROPIC_API_KEY.
+        One Haiku call per chunk. Runs on your Claude Code subscription by
+        default (TEMPO_LLM=claude); set ANTHROPIC_API_KEY for the faster API path.
 
   tempo recall <words...> [--key <k>] [--valid-at <date>] [--as-of <date>] [--history]
         Search memory. --valid-at asks "what was true then";
@@ -296,7 +300,7 @@ const help = `tempo — memory that knows when things stopped being true
   tempo report
         What ingest found: what changed, what disagrees.
 
-Environment: TEMPO_DB (${dbPath}), TEMPO_ORG (${org}), ANTHROPIC_API_KEY`;
+Environment: TEMPO_DB (${dbPath}), TEMPO_ORG (${org}), TEMPO_LLM (claude|api), ANTHROPIC_API_KEY`;
 
 switch (cmd) {
   case 'ingest':

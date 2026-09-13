@@ -50,27 +50,23 @@ describe('cheapVerdict', () => {
 });
 
 /** A judge that records what it was asked, so we can prove when it is skipped. */
-function fakeClient(answers: Record<string, boolean>) {
+function fakeLLM(answers: Record<string, boolean>) {
   const asked: string[] = [];
-  return {
-    asked,
-    client: {
-      messages: {
-        parse: vi.fn(async ({ messages }: { messages: { content: string }[] }) => {
-          const content = messages[0]!.content;
-          asked.push(content);
-          const hit = Object.entries(answers).find(([k]) => content.includes(k));
-          return { parsed_output: { same: hit ? hit[1] : false, why: 'test' } };
-        }),
-      },
-    } as never,
-  };
+  const llm = {
+    name: 'fake',
+    parse: vi.fn(async ({ user }: { user: string }) => {
+      asked.push(user);
+      const hit = Object.entries(answers).find(([k]) => user.includes(k));
+      return { same: hit ? hit[1] : false, why: 'test' };
+    }),
+  } as never;
+  return { asked, llm };
 }
 
 describe('Reconciler', () => {
   it('matches a restatement without ever calling the model', async () => {
-    const f = fakeClient({});
-    const r = new Reconciler({ client: f.client });
+    const f = fakeLLM({});
+    const r = new Reconciler({ llm: f.llm });
     const match = await r.matchExisting('auth.clerk', 'driving-tapir-92.clerk.accounts.dev', [
       'Both frontend and backend use Clerk instance driving-tapir-92.clerk.accounts.dev',
     ]);
@@ -80,15 +76,15 @@ describe('Reconciler', () => {
   });
 
   it('returns null for a genuinely different value, without calling the model', async () => {
-    const f = fakeClient({});
-    const r = new Reconciler({ client: f.client });
+    const f = fakeLLM({});
+    const r = new Reconciler({ llm: f.llm });
     expect(await r.matchExisting('deploy.command', './scripts/ship.sh', ['make deploy'])).toBeNull();
     expect(f.asked).toHaveLength(0);
   });
 
   it('calls the model only for the undecidable pair', async () => {
-    const f = fakeClient({ '5433': false });
-    const r = new Reconciler({ client: f.client });
+    const f = fakeLLM({ '5433': false });
+    const r = new Reconciler({ llm: f.llm });
     const match = await r.matchExisting('db.port', 'the database runs on port 5433', [
       'runs on port 5432',
       'something entirely unrelated here',
@@ -99,14 +95,14 @@ describe('Reconciler', () => {
   });
 
   it('uses the model verdict when it says the facts are the same', async () => {
-    const f = fakeClient({ 'Statement B: runs on port 5432': true });
-    const r = new Reconciler({ client: f.client });
+    const f = fakeLLM({ 'Statement B: runs on port 5432': true });
+    const r = new Reconciler({ llm: f.llm });
     expect(await r.matchExisting('db.port', 'listens on 5432 by default', ['runs on port 5432'])).toBe('runs on port 5432');
   });
 
   it('caches a verdict instead of asking twice', async () => {
-    const f = fakeClient({ '5432': true });
-    const r = new Reconciler({ client: f.client });
+    const f = fakeLLM({ '5432': true });
+    const r = new Reconciler({ llm: f.llm });
     await r.matchExisting('db.port', 'listens on 5432 by default', ['runs on port 5432']);
     await r.matchExisting('db.port', 'listens on 5432 by default', ['runs on port 5432']);
     expect(f.asked).toHaveLength(1);
@@ -114,13 +110,13 @@ describe('Reconciler', () => {
   });
 
   it('treats a judge failure as "not the same" so nothing is silently merged', async () => {
-    const client = { messages: { parse: vi.fn(async () => { throw new Error('boom'); }) } } as never;
-    const r = new Reconciler({ client });
+    const llm = { name: 'fake', parse: vi.fn(async () => { throw new Error('boom'); }) } as never;
+    const r = new Reconciler({ llm });
     expect(await r.matchExisting('db.port', 'listens on 5432 by default', ['runs on port 5432'])).toBeNull();
   });
 
   it('returns null when there is nothing to compare against', async () => {
-    const r = new Reconciler({ client: fakeClient({}).client });
+    const r = new Reconciler({ llm: fakeLLM({}).llm });
     expect(await r.matchExisting('k', 'v', [])).toBeNull();
   });
 });
