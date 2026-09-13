@@ -427,3 +427,44 @@ line back and watching `tsc` fail on it.
 Lesson: when the test runner and the production runtime compile your code
 differently, a green test suite proves less than it looks. The
 typechecker had to be taught what the runtime actually accepts.
+
+---
+
+## Day 2, later — no API key, and why each call took 30 seconds
+
+### The plugin never needed a key
+
+Worth stating plainly, because it got muddled: the hook and the four
+`tempo_*` tools are pure SQLite. Claude Code calls them on the user's own
+subscription. No key, no extra cost, ever. The only LLM use in tempo is
+`tempo ingest` — the one-time import of *old* transcripts — and that was
+the piece asking for `ANTHROPIC_API_KEY`.
+
+That is the wrong default for a Claude Code plugin. A user who already
+pays for Claude Code should not need a second account to import their
+own history. So `src/llm.ts` now has two backends behind one interface:
+`claude -p` on the subscription (default), or the SDK with a key (opt-in,
+faster). Extraction and the judge do not know which they are talking to.
+
+### Failure #14 — 30 seconds per call
+
+First run on the CLI backend: 4 chunks a minute. 867 chunks → 3.5 hours.
+A trivial `claude -p` call takes 3 seconds, so it was not process startup.
+
+The raw result JSON had the answer: `thinkingTokens: 2126`. Haiku was
+*reasoning* for two thousand tokens before listing the facts in a 5KB
+chunk. Output was 3,146 tokens, of which 2,126 were thinking. At Haiku's
+speed that is the whole 30 seconds.
+
+Thinking is the right default for an agent doing real work. For "list the
+facts in this text" it is pure cost. `MAX_THINKING_TOKENS=0` in the
+child's environment: 32s → 8s, same facts, a third of the tokens.
+
+Measured on one real chunk before and after, not assumed.
+
+### Judge calls, batched
+
+Second cost: the "is this a rewording?" judge made one CLI call per
+ambiguous *pair*. A candidate with three ambiguous existing values meant
+three spawns. Now it is one call per candidate with a numbered list, and
+the model returns an index. Same cache, fewer processes.
