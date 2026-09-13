@@ -1,5 +1,5 @@
-import { TempoStore } from '../../store.js';
-import type { MemoryAdapter, ReadOp, ReturnedFact, WriteOp } from '../adapter.js';
+import { TempoStore } from '../../store.ts';
+import type { MemoryAdapter, ReadOp, ReturnedFact, WriteOp } from '../adapter.ts';
 
 export function tempoAdapter(): MemoryAdapter {
   let store = new TempoStore(':memory:');

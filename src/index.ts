@@ -1,2 +1,2 @@
-export { TempoStore } from './store.js';
-export type * from './types.js';
+export { TempoStore } from './store.ts';
+export type * from './types.ts';

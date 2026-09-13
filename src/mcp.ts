@@ -19,8 +19,8 @@ import { hostname, homedir, userInfo } from 'node:os';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
-import { TempoStore, type UndatedDisagreementPolicy } from './store.js';
-import { formatFacts } from './format.js';
+import { TempoStore, type UndatedDisagreementPolicy } from './store.ts';
+import { formatFacts } from './format.ts';
 
 const dbPath = process.env['TEMPO_DB'] ?? join(homedir(), '.tempo', 'tempo.db');
 const org = process.env['TEMPO_ORG'] ?? 'default';

@@ -12,9 +12,9 @@
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { TempoStore } from './store.js';
-import { formatFacts } from './format.js';
-import type { Conflict, Fact } from './types.js';
+import { TempoStore } from './store.ts';
+import { formatFacts } from './format.ts';
+import type { Conflict, Fact } from './types.ts';
 
 const STOP = new Set([
   'the', 'and', 'for', 'with', 'this', 'that', 'from', 'what', 'when', 'where', 'which', 'how', 'why',
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
 }
 
 // Only run when executed directly, not when imported by tests.
-if (process.argv[1] && /hook\.js$/.test(process.argv[1])) {
+if (process.argv[1] && /hook\.(js|ts)$/.test(process.argv[1])) {
   main().catch((e) => {
     process.stderr.write(`tempo hook: ${(e as Error).message}\n`);
     process.exit(0);

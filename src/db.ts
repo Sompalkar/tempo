@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { SCHEMA_SQL, SCHEMA_VERSION } from './schema.js';
+import { SCHEMA_SQL, SCHEMA_VERSION } from './schema.ts';
 
 /**
  * Open (or create) a tempo database file and make sure the schema exists.

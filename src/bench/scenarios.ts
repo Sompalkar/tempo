@@ -7,7 +7,7 @@
  * They are grouped by the four hard problems from DESIGN.md §1.
  * Read the `title` of each — that is the whole test in one sentence.
  */
-import type { MemoryAdapter, ReturnedFact } from './adapter.js';
+import type { MemoryAdapter, ReturnedFact } from './adapter.ts';
 
 export type Problem = 'temporal' | 'contradiction' | 'provenance' | 'boundary';
 

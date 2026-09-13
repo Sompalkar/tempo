@@ -4,7 +4,7 @@
  * the name.
  */
 import { describe, expect, it } from 'vitest';
-import { TempoStore } from './store.js';
+import { TempoStore } from './store.ts';
 
 // Fixed clock so tests are deterministic. Times are ms since epoch.
 const T = (day: number) => Date.UTC(2026, 0, day); // Jan <day>, 2026

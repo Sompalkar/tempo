@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { openDatabase } from './db.js';
+import { openDatabase } from './db.ts';
 import type {
   Conflict,
   Fact,
@@ -14,7 +14,7 @@ import type {
   RecallResult,
   RememberInput,
   RememberResult,
-} from './types.js';
+} from './types.ts';
 
 /** Make a string safe to put inside a LIKE pattern (with ESCAPE '\\'). */
 function escapeLike(s: string): string {

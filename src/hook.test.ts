@@ -3,8 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { recallForPrompt, termsFrom } from './hook.js';
-import { TempoStore } from './store.js';
+import { recallForPrompt, termsFrom } from './hook.ts';
+import { TempoStore } from './store.ts';
 
 const alice = { writer: 'agent-alice', kind: 'session' } as const;
 
@@ -40,7 +40,7 @@ describe('hook binary', () => {
       s.close();
 
       const run = (prompt: string) =>
-        execFileSync('node', [join(process.cwd(), 'dist', 'hook.js')], {
+        execFileSync('node', [join(process.cwd(), 'src', 'hook.ts')], {
           input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', user_input: prompt }),
           env: { ...process.env, TEMPO_DB: db, TEMPO_ORG: 'acme' },
         }).toString();
@@ -54,7 +54,7 @@ describe('hook binary', () => {
   });
 
   it('exits 0 and prints nothing on garbage input', () => {
-    const out = execFileSync('node', [join(process.cwd(), 'dist', 'hook.js')], { input: 'not json', stdio: ['pipe', 'pipe', 'ignore'] }).toString();
+    const out = execFileSync('node', [join(process.cwd(), 'src', 'hook.ts')], { input: 'not json', stdio: ['pipe', 'pipe', 'ignore'] }).toString();
     expect(out).toBe('');
   });
 });

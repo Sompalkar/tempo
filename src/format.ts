@@ -2,7 +2,7 @@
  * Turn recall results into short text an LLM can read in a prompt.
  * Kept separate so the engine never cares how results are displayed.
  */
-import type { Conflict, Fact } from './types.js';
+import type { Conflict, Fact } from './types.ts';
 
 function day(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);

@@ -6,10 +6,10 @@
  *   npm run bench -- --md    → also writes bench/RESULTS.md
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
-import type { MemoryAdapter } from './adapter.js';
-import { appendOnlyAdapter, lastWriteWinsAdapter } from './adapters/baselines.js';
-import { tempoAdapter } from './adapters/tempo.js';
-import { scenarios, type Problem } from './scenarios.js';
+import type { MemoryAdapter } from './adapter.ts';
+import { appendOnlyAdapter, lastWriteWinsAdapter } from './adapters/baselines.ts';
+import { tempoAdapter } from './adapters/tempo.ts';
+import { scenarios, type Problem } from './scenarios.ts';
 
 const adapters: MemoryAdapter[] = [lastWriteWinsAdapter(), appendOnlyAdapter(), tempoAdapter()];
 

@@ -15,7 +15,7 @@ let client: Client;
 async function connect(writer: string): Promise<Client> {
   const transport = new StdioClientTransport({
     command: 'node',
-    args: [join(process.cwd(), 'dist', 'mcp.js')],
+    args: [join(process.cwd(), 'src', 'mcp.ts')],
     env: { ...process.env, TEMPO_DB: join(dir, 't.db'), TEMPO_ORG: 'acme', TEMPO_WRITER: writer },
   });
   const c = new Client({ name: 'test', version: '0' });

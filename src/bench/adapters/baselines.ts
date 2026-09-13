@@ -4,7 +4,7 @@
  * Both are given org-scoped storage to be fair. The point is to test time
  * and contradiction handling, not to catch them on something trivial.
  */
-import type { MemoryAdapter, ReadOp, ReturnedFact, WriteOp } from '../adapter.js';
+import type { MemoryAdapter, ReadOp, ReturnedFact, WriteOp } from '../adapter.ts';
 
 interface Entry {
   value: string;

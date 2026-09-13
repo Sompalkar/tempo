@@ -3,9 +3,9 @@
  * this fails with the scenario title so you know which promise broke.
  */
 import { describe, expect, it } from 'vitest';
-import { tempoAdapter } from './adapters/tempo.js';
-import { lastWriteWinsAdapter, appendOnlyAdapter } from './adapters/baselines.js';
-import { scenarios } from './scenarios.js';
+import { tempoAdapter } from './adapters/tempo.ts';
+import { lastWriteWinsAdapter, appendOnlyAdapter } from './adapters/baselines.ts';
+import { scenarios } from './scenarios.ts';
 
 describe('StaleBench: tempo', () => {
   const m = tempoAdapter();
