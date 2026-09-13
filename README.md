@@ -118,9 +118,15 @@ tempo recall deploy          # search
 ```
 
 **No API key needed.** By default ingest runs on your existing Claude Code
-subscription (`claude -p` under the hood, Haiku, ~8s a chunk). Set
-`ANTHROPIC_API_KEY` and it switches to the API for speed; `TEMPO_LLM=claude|api`
-forces either.
+subscription (`claude -p` under the hood, Haiku, thinking off, ~8s a chunk).
+Set `ANTHROPIC_API_KEY` and it switches to the API for speed;
+`TEMPO_LLM=claude|api` forces either.
+
+**Subscriptions have a usage window.** A big project is hundreds of chunks,
+and a Pro plan will hit its 5-hour limit partway through. That is fine:
+ingest remembers which chunks it finished, so run it in slices —
+`tempo ingest --chunks 150` — and re-run later; it picks up where it
+stopped and never double-counts.
 
 The extractor is told: if the text does not say *when* a fact became true,
 leave the date empty. Inventing a date would hand the engine a fake reason
