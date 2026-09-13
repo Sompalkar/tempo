@@ -1,9 +1,9 @@
 {
   "name": "tempo",
-  "displayName": "tempo — team memory that knows when things stopped being true",
-  "version": "0.1.1",
+  "displayName": "tempo \u2014 team memory that knows when things stopped being true",
+  "version": "0.1.2",
   "description": "Bitemporal, provenance-tracked shared memory. Recalls relevant facts before each prompt; exposes tempo_remember / tempo_recall / tempo_conflicts / tempo_resolve tools.",
-  "author": { "name": "Som Palkar" },
-  "hooks": "./hooks/hooks.json",
-  "mcpServers": "./.mcp.json"
+  "author": {
+    "name": "Som Palkar"
+  }
 }
