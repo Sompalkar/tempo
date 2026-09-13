@@ -495,6 +495,24 @@ export class TempoStore {
     return rows.map((r) => r.value);
   }
 
+  // -------------------------------------------------------------------------
+  // ingest bookkeeping: which source chunks have already been processed
+  // -------------------------------------------------------------------------
+
+  /** Has this source chunk already been ingested into this org? */
+  isIngested(org: string, ref: string): boolean {
+    return (
+      this.db.prepare(`SELECT 1 FROM meta WHERE k = ?`).get(`ingested:${org}:${ref}`) !== undefined
+    );
+  }
+
+  /** Record that a source chunk has been fully ingested. Safe to call twice. */
+  markIngested(org: string, ref: string): void {
+    this.db
+      .prepare(`INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)`)
+      .run(`ingested:${org}:${ref}`, String(Date.now()));
+  }
+
   /** Fetch one observation by id (scoped to org). */
   get(org: string, id: string): Observation | null {
     const row = this.db

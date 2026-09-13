@@ -79,25 +79,34 @@ async function ingest(): Promise<void> {
   let sessions = findSessions(findOpts);
   if (limitSessions) sessions = sessions.slice(0, limitSessions);
 
+  const store = openStore();
+  const chunkRef = (c: Chunk) => `${c.sessionId}#${c.index}`;
+
   let chunks: Chunk[] = [];
   for (const s of sessions) chunks.push(...chunkSession(s));
   // Oldest first, so the store learns history in the order it happened.
   chunks.sort((a, b) => a.at - b.at);
+  // Skip what a previous run already finished. Makes ingest safe to re-run
+  // (a nightly cron, or resuming after a crash) without double-counting.
+  const total = chunks.length;
+  chunks = chunks.filter((c) => !store.isIngested(org, chunkRef(c)));
+  const skipped = total - chunks.length;
   if (limitChunks) chunks = chunks.slice(0, limitChunks);
 
   if (chunks.length === 0) {
-    console.log('No sessions found.');
+    console.log(skipped ? `Nothing new: all ${skipped} chunk(s) already ingested.` : 'No sessions found.');
+    store.close();
     return;
   }
 
-  console.log(`${sessions.length} session(s), ${chunks.length} chunk(s).`);
+  console.log(`${sessions.length} session(s), ${chunks.length} chunk(s)${skipped ? ` (${skipped} already done, skipped)` : ''}.`);
   console.log(`That is ${chunks.length} Haiku call(s). Writing to ${dbPath} (org "${org}").`);
   if (!(await confirm('Run it?'))) {
     console.log('Stopped.');
+    store.close();
     return;
   }
 
-  const store = openStore();
   const counts: Record<RememberAction, number> = {
     inserted: 0,
     corroborated: 0,
@@ -145,7 +154,7 @@ async function ingest(): Promise<void> {
       org,
       key: fact.key,
       value,
-      source: { writer: `session:${chunk.sessionId.slice(0, 8)}`, kind: 'session', ref: `${chunk.sessionId}#${chunk.index}` },
+      source: { writer: `session:${chunk.sessionId.slice(0, 8)}`, kind: 'session', ref: chunkRef(chunk) },
       now: chunk.at,
     };
     if (fact.validFrom) input.validFrom = Date.parse(fact.validFrom);
@@ -162,12 +171,17 @@ async function ingest(): Promise<void> {
           knownKeys: store.keys(org, 200),
         });
         dropped += bad.length;
+        const settled: Promise<unknown>[] = [];
         for (const fact of kept) {
-          writes.add(fact.key, () => writeFact(fact, chunk)).catch((e: unknown) => {
-            failed++;
-            if (failed <= 3) console.error(`  write failed: ${(e as Error).message}`);
-          });
+          settled.push(
+            writes.add(fact.key, () => writeFact(fact, chunk)).catch((e: unknown) => {
+              failed++;
+              if (failed <= 3) console.error(`  write failed: ${(e as Error).message}`);
+            }),
+          );
         }
+        // Only mark the chunk done once every one of its facts has landed.
+        void Promise.all(settled).then(() => store.markIngested(org, chunkRef(chunk)));
       } catch (e) {
         failed++;
         if (failed <= 3) console.error(`  chunk failed: ${(e as Error).message}`);

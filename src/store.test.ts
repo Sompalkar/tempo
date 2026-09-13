@@ -278,6 +278,17 @@ describe('recall: search', () => {
   });
 });
 
+describe('ingest bookkeeping', () => {
+  it('remembers which chunks were ingested, per org', () => {
+    const s = fresh();
+    expect(s.isIngested('acme', 'sess#0')).toBe(false);
+    s.markIngested('acme', 'sess#0');
+    s.markIngested('acme', 'sess#0'); // twice is fine
+    expect(s.isIngested('acme', 'sess#0')).toBe(true);
+    expect(s.isIngested('globex', 'sess#0')).toBe(false);
+  });
+});
+
 describe('boundaries', () => {
   it('one org can never read another org\'s facts', () => {
     const s = fresh();
