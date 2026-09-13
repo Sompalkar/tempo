@@ -170,6 +170,22 @@ describe('remember: real disagreement (conflict)', () => {
     expect(s.get('acme', a.id!)!.supersededBy).toBe(b.id);
   });
 
+  it('an open conflict is closed automatically when a dated newer fact replaces both sides', () => {
+    const s = fresh();
+    s.remember({ org: 'acme', key: 'k', value: 'A', source: alice, now: T(1) });
+    s.remember({ org: 'acme', key: 'k', value: 'B', source: bob, now: T(1) });
+    expect(s.conflicts('acme')).toHaveLength(1);
+    const r = s.remember({ org: 'acme', key: 'k', value: 'C', source: { writer: 'carol', kind: 'doc' }, validFrom: T(5), now: T(5) });
+    expect(r.action).toBe('superseded');
+    expect(s.conflicts('acme')).toHaveLength(0);
+    const closed = s.conflicts('acme', { status: 'resolved' }).find((c) => c.reason?.startsWith('both-superseded'));
+    expect(closed).toBeDefined();
+    expect(closed!.winnerId).toBe(r.id);
+    const { facts, conflicts } = s.recall({ org: 'acme', key: 'k', asOf: T(6), validAt: T(6), includeHistory: true });
+    expect(conflicts).toHaveLength(0);
+    expect(facts.map((f) => f.value)).toEqual(['C']);
+  });
+
   it('refuses to resolve with an observation that is not part of the conflict', () => {
     const s = fresh();
     s.remember({ org: 'acme', key: 'k', value: 'A', source: alice, now: T(1) });
@@ -236,6 +252,15 @@ describe('recall: search', () => {
     s.remember({ org: 'acme', key: 'billing.cycle', value: 'z', source: alice, now: T(1) });
     const { facts } = s.recall({ org: 'acme', key: 'deploy.', asOf: T(2), validAt: T(2) });
     expect(facts.map((f) => f.key).sort()).toEqual(['deploy.command', 'deploy.region']);
+  });
+
+  it('underscores and percent signs in a key prefix are taken literally, not as wildcards', () => {
+    const s = fresh();
+    s.remember({ org: 'acme', key: 'deploy_prod.cmd', value: 'x', source: alice, now: T(1) });
+    s.remember({ org: 'acme', key: 'deployXprod.cmd', value: 'y', source: alice, now: T(1) });
+    s.remember({ org: 'acme', key: 'rate.100%.limit', value: 'z', source: alice, now: T(1) });
+    expect(s.recall({ org: 'acme', key: 'deploy_prod.', asOf: T(2), validAt: T(2) }).facts.map((f) => f.key)).toEqual(['deploy_prod.cmd']);
+    expect(s.recall({ org: 'acme', key: 'rate.100%.', asOf: T(2), validAt: T(2) }).facts.map((f) => f.key)).toEqual(['rate.100%.limit']);
   });
 
   it('query searches values, case-insensitively', () => {

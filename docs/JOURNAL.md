@@ -108,3 +108,31 @@ adapter is ~50 lines, so real systems can be added and compared.
 - Not done yet: a Claude Code hook that recalls automatically on each
   prompt; an ingestion path from real session transcripts; npm publish;
   a GitHub repo.
+
+### Failure #2 and #3 — found by reading, not by tests
+
+After the README was written I re-read `store.ts` one more time looking
+for edge cases. Found two.
+
+**#2 — a conflict that never closes.** Alice and Bob disagree, so a
+conflict is open. Then Carol writes a *dated* fact that is newer than both.
+Alice's and Bob's facts get superseded correctly, but the conflict row
+stayed `open` forever, pointing at two facts that are no longer current.
+Harmless for `recall` (it only shows conflicts touching returned facts),
+but `tempo_conflicts` would list a ghost. Fix: when a fact is superseded,
+any open conflict it is part of is closed with reason
+`both-superseded:<why>` and the new fact as winner.
+
+**#3 — SQL LIKE escaping was half done.** I escaped `%` and `_` in
+prefix and query strings with a backslash, but never told SQLite
+`ESCAPE '\'`. SQLite has no default escape character, so the backslash
+was just a literal backslash and `_` still meant "any one character". A
+key prefix like `deploy_prod.` would also match `deployXprod.`. Wrong
+results, no error. Fix: add the `ESCAPE` clause and escape backslash too.
+
+Both got a test. Both tests were checked to **fail on the old code** before
+being trusted (`git stash` the fix, run, see red, `git stash pop`).
+
+Lesson: after tests are green, read the code once more specifically
+hunting for "what input would make this quietly wrong?" Quiet wrongness is
+worse than a crash.

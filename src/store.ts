@@ -16,6 +16,11 @@ import type {
   RememberResult,
 } from './types.js';
 
+/** Make a string safe to put inside a LIKE pattern (with ESCAPE '\\'). */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, '\\$&');
+}
+
 // ---------------------------------------------------------------------------
 // Row <-> object mapping
 // ---------------------------------------------------------------------------
@@ -262,6 +267,14 @@ export class TempoStore {
         `UPDATE observations SET valid_to = ?, closed_at = ?, superseded_by = ? WHERE id = ?`,
       )
       .run(validTo, now, newId, old.id);
+    // Any open conflict the old fact was part of is now moot: both sides
+    // are being replaced by something newer. Close it and say why.
+    this.db
+      .prepare(
+        `UPDATE conflicts SET status = 'resolved', winner_id = ?, reason = ?, resolved_at = ?
+         WHERE status = 'open' AND (a_id = ? OR b_id = ?)`,
+      )
+      .run(newId, 'both-superseded:' + reason, now, old.id, old.id);
     // Record it as a resolved conflict so the trail is visible later.
     this.db
       .prepare(
@@ -328,16 +341,16 @@ export class TempoStore {
 
     if (input.key !== undefined) {
       if (input.key.endsWith('.')) {
-        where.push('key LIKE ?');
-        args.push(input.key.replace(/[%_]/g, '\\$&') + '%');
+        where.push(`key LIKE ? ESCAPE '\\'`);
+        args.push(escapeLike(input.key) + '%');
       } else {
         where.push('key = ?');
         args.push(input.key);
       }
     }
     if (input.query !== undefined && input.query !== '') {
-      where.push('value LIKE ? COLLATE NOCASE');
-      args.push('%' + input.query.replace(/[%_]/g, '\\$&') + '%');
+      where.push(`value LIKE ? ESCAPE '\\' COLLATE NOCASE`);
+      args.push('%' + escapeLike(input.query) + '%');
     }
 
     const rows = this.db
