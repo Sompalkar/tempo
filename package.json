@@ -1,6 +1,6 @@
 {
   "name": "tempo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent memory that knows when things stopped being true",
   "main": "dist/index.js",
   "scripts": {
