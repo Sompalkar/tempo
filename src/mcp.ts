@@ -18,6 +18,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { hostname, homedir, userInfo } from 'node:os';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { TempoStore, type UndatedDisagreementPolicy } from './store.ts';
 import { formatFacts } from './format.ts';
@@ -30,7 +31,8 @@ const policy = (process.env['TEMPO_POLICY'] ?? 'conflict') as UndatedDisagreemen
 mkdirSync(dirname(dbPath), { recursive: true });
 const store = new TempoStore(dbPath, { onUndatedDisagreement: policy });
 
-const server = new McpServer({ name: 'tempo', version: '0.1.0' });
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+const server = new McpServer({ name: 'tempo', version: pkg.version });
 
 /** ISO date or ms → ms. Lets agents pass "2026-03-01" instead of a number. */
 const timeArg = z
