@@ -176,6 +176,16 @@ export function findSessions(opts: { root?: string; projects?: string[] } = {}):
   return out.sort((a, b) => b.startedAt - a.startedAt);
 }
 
+/**
+ * The key ingest uses to remember a chunk is done. Content only — no session
+ * id — because Claude Code gives a resumed conversation a NEW session id
+ * with the OLD messages copied in. Keyed by session, every resume re-ingested
+ * the whole history.
+ */
+export function chunkDoneKey(c: Chunk): string {
+  return `chunk:${c.hash}`;
+}
+
 export interface Chunk {
   text: string;
   sessionId: string;
@@ -214,7 +224,7 @@ export function chunkSession(s: Session, targetChars = 6000): Chunk[] {
       title: s.title,
       at,
       index: chunks.length,
-      hash: createHash('sha1').update(text).digest('hex').slice(0, 10),
+      hash: createHash('sha1').update(text).digest('hex').slice(0, 16),
     });
     buf = [];
     size = 0;

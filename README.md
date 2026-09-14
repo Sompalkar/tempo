@@ -30,8 +30,11 @@ That gives Claude Code three things:
 - **four tools** — `tempo_remember`, `tempo_recall`, `tempo_conflicts`,
   `tempo_resolve`, for when Claude wants to save or check something itself.
 
-No API key. Capture runs on your Claude subscription. One SQLite file on
-your machine. No build step — Node 26 runs the TypeScript directly.
+No API key. Capture runs on your Claude subscription — at most 20 chunks
+(~20 small Haiku calls) per session end, and never for one-line helper
+sessions. `TEMPO_CAPTURE=off` turns it off; `TEMPO_CAPTURE_MAX_CHUNKS`
+adjusts the cap. One SQLite file on your machine. No build step — Node 26
+runs the TypeScript directly.
 
 Tell a session "staging is Postgres 16 at db-staging.internal, deploys go
 through `make ship`", close it, open a new one, ask "how do we deploy?" —

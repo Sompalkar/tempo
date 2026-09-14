@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chunkSession, findSessions, parseTranscript, projectOf, type Session } from './claude-code.ts';
+import { chunkDoneKey, chunkSession, findSessions, parseTranscript, projectOf, type Session } from './claude-code.ts';
 
 const T = (n: number) => new Date(Date.UTC(2026, 0, n)).toISOString();
 
@@ -187,6 +187,16 @@ describe('chunk hash', () => {
     const b = chunkSession({ ...base, turns: [...base.turns, { role: 'assistant', text: 'more', at: 2 }] })[0]!;
     expect(a.index).toBe(b.index);
     expect(a.hash).not.toBe(b.hash);
+  });
+});
+
+describe('chunkDoneKey', () => {
+  it('is the same for identical text under different session ids (a resumed session)', () => {
+    const mk = (sessionId: string): Session => ({
+      sessionId, cwd: '/', project: 'p', title: 't', startedAt: 0, endedAt: 0, path: '/p',
+      turns: [{ role: 'user', text: 'the same conversation', at: 1 }],
+    });
+    expect(chunkDoneKey(chunkSession(mk('old-id'))[0]!)).toBe(chunkDoneKey(chunkSession(mk('new-id'))[0]!));
   });
 });
 

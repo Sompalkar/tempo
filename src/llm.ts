@@ -14,6 +14,26 @@
 import { spawn } from 'node:child_process';
 import { z, type ZodType } from 'zod';
 
+/**
+ * Environment for a child `claude -p`.
+ *
+ * Strip the variables a parent Claude Code session leaves behind (they point
+ * the child at the parent's auth and can 401), turn thinking off, and —
+ * critically — tell tempo's own SessionEnd hook NOT to capture this child.
+ * Without that last line the extractor's session ends, capture fires, spawns
+ * another extractor, whose session ends, capture fires... 8,476 times on one
+ * laptop before the usage limit stopped it. See JOURNAL, failure #17.
+ */
+export function childEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = Object.fromEntries(
+    Object.entries(base).filter(([k]) => !k.startsWith('CLAUDE_CODE_') && k !== 'ANTHROPIC_BASE_URL'),
+  ) as NodeJS.ProcessEnv;
+  env['MAX_THINKING_TOKENS'] = '0';
+  env['DISABLE_THINKING'] = '1';
+  env['TEMPO_CAPTURE'] = 'off';
+  return env;
+}
+
 /** Run a command, feed it stdin, collect stdout. Rejects on non-zero exit or timeout. */
 function run(cmd: string, args: string[], stdin: string, env: NodeJS.ProcessEnv, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -92,17 +112,7 @@ export function claudeCliLLM(opts: { model?: string; timeoutMs?: number } = {}):
         '--json-schema', schema,
         '--system-prompt', req.system,
       ];
-      // Strip the variables a parent Claude Code session leaves behind; they
-      // point the child at the parent's auth and can 401. The CLI reads its
-      // own login from the keychain.
-      const env = Object.fromEntries(
-        Object.entries(process.env).filter(([k]) => !k.startsWith('CLAUDE_CODE_') && k !== 'ANTHROPIC_BASE_URL'),
-      ) as NodeJS.ProcessEnv;
-      // Extraction is "list what is in this text" — no reasoning needed. Left
-      // on, Haiku spent ~2,000 thinking tokens per chunk and each call took
-      // ~30s. Off, ~8s and a third of the cost. Measured, not guessed.
-      env['MAX_THINKING_TOKENS'] = '0';
-      env['DISABLE_THINKING'] = '1';
+      const env = childEnv();
       const stdout = await run('claude', args, req.user, env, timeout);
       const out = JSON.parse(stdout) as { is_error?: boolean; structured_output?: unknown; result?: string };
       if (out.is_error) throw new Error(`claude -p failed: ${out.result ?? 'unknown error'}`);

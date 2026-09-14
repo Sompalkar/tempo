@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, openSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseTranscript, projectOf } from './ingest/claude-code.ts';
 
 interface HookInput {
   hook_event_name?: string;
@@ -26,10 +27,29 @@ interface HookInput {
   reason?: string;
 }
 
+/** At most this many chunks per capture. A giant session is imported over several ends, not in one burst. */
+export const MAX_CHUNKS_PER_CAPTURE = Number(process.env['TEMPO_CAPTURE_MAX_CHUNKS'] ?? '20');
+
 /** Build the detached command. Exported so it can be tested without spawning. */
 export function captureCommand(transcriptPath: string): { cmd: string; args: string[] } {
   const cli = join(dirname(fileURLToPath(import.meta.url)), 'cli.ts');
-  return { cmd: process.execPath, args: [cli, 'ingest', '--file', transcriptPath, '--yes', '--quiet'] };
+  return {
+    cmd: process.execPath,
+    args: [cli, 'ingest', '--file', transcriptPath, '--chunks', String(MAX_CHUNKS_PER_CAPTURE), '--yes', '--quiet'],
+  };
+}
+
+/**
+ * Is this transcript worth a model call? Claude Code spawns many short
+ * helper sessions (a one-line `claude -p`, a subagent) that contain nothing
+ * durable. Two real turns is the floor.
+ */
+export function worthCapturing(transcriptPath: string): boolean {
+  const s = parseTranscript(transcriptPath, projectOf(transcriptPath));
+  if (!s) return false;
+  const humanTurns = s.turns.filter((t) => t.role === 'user').length;
+  const chars = s.turns.reduce((n, t) => n + t.text.length, 0);
+  return humanTurns >= 2 && chars >= 800;
 }
 
 async function main(): Promise<void> {
@@ -41,16 +61,19 @@ async function main(): Promise<void> {
 
   const transcript = input.transcript_path;
   if (!transcript || !existsSync(transcript)) return;
+  if (!worthCapturing(transcript)) return;
 
   const logDir = process.env['TEMPO_DB'] ? dirname(process.env['TEMPO_DB']) : join(homedir(), '.tempo');
   mkdirSync(logDir, { recursive: true });
   const log = openSync(join(logDir, 'capture.log'), 'a');
 
   const { cmd, args } = captureCommand(transcript);
+  // The ingest's own model calls must not trigger capture again.
+  const env = { ...process.env, TEMPO_CAPTURE: 'off' };
   const child = spawn(cmd, args, {
     detached: true,
     stdio: ['ignore', log, log],
-    env: process.env,
+    env,
   });
   // Let Claude Code exit without waiting for us.
   child.unref();

@@ -548,3 +548,53 @@ confirmation count is slightly flattered.
 That closes the loop the plugin was missing: work, close, and the next
 session knows. Same model as Glen — capture as the work happens — on one
 machine, with no key.
+
+---
+
+## Day 3, later — Failure #17: capture ate itself
+
+Som started recording the demo and got: *"You're out of usage credits."*
+The demo was eight small calls. Something else had spent the quota.
+
+`~/.tempo/capture.log` had **8,476 entries**. Almost all "1 chunks".
+
+The chain: a session ends → the SessionEnd hook starts an ingest → the
+ingest calls `claude -p` to extract facts → **that `claude -p` is itself a
+Claude Code session with the tempo plugin loaded** → when it exits, its
+SessionEnd fires capture → which starts an ingest → which calls
+`claude -p` → …
+
+A fork bomb, one Haiku call per iteration, throttled only by the usage
+limit. It ran for most of a day in the background while everything looked
+fine. The day-3 entry above, written a few hours earlier, says "it just
+learns". It did. It also learned from itself, thousands of times.
+
+Two more things made it worse:
+- Claude Code gives a *resumed* conversation a new session id with the old
+  messages copied in. The done-list was keyed by session id, so every
+  resume re-ingested the entire history.
+- There was no cap. A long session meant hundreds of calls in one burst.
+
+### Fixes, each with a test
+
+1. **The extractor's child env sets `TEMPO_CAPTURE=off`.** The hook checks
+   that first and exits. This alone breaks the loop.
+2. **Tiny transcripts are not worth a model call.** Fewer than two human
+   turns or under 800 characters of content → skip. Helper sessions, `-p`
+   one-liners, subagents: none of them get captured.
+3. **Done-list keyed by content hash only**, not session id. A resumed
+   session with the same text is already done.
+4. **Cap of 20 chunks per capture** (`TEMPO_CAPTURE_MAX_CHUNKS`). A giant
+   session is imported across several ends, never in one burst.
+
+The plugin was disabled on this machine the moment the loop was found, and
+re-enabled only after these landed.
+
+### The lesson, stated plainly
+
+A hook that spawns the thing that fires the hook is a loop. I built the
+capture path in an afternoon, tested that it *worked*, and shipped it. I
+never asked "what does this trigger?" Any code that runs automatically at
+a lifecycle boundary needs the question: can this cause itself? This is
+the most expensive bug in the journal, and it would have been the cheapest
+to prevent.

@@ -20,7 +20,7 @@ import { formatFacts } from './format.ts';
 import { extractFacts } from './extract.ts';
 import { Reconciler } from './reconcile.ts';
 import { defaultLLM } from './llm.ts';
-import { chunkSession, findSessions, parseTranscript, projectOf, type Chunk } from './ingest/claude-code.ts';
+import { chunkDoneKey, chunkSession, findSessions, parseTranscript, projectOf, type Chunk } from './ingest/claude-code.ts';
 import { KeyedQueue } from './ingest/keyed-queue.ts';
 import type { RememberAction } from './types.ts';
 
@@ -67,8 +67,7 @@ async function confirm(question: string): Promise<boolean> {
   return a === 'y' || a === 'yes';
 }
 
-// ---------------------------------------------------------------------------
-
+ 
 async function ingest(): Promise<void> {
   const projects = opt('project')?.split(',');
   const limitSessions = Number(opt('sessions') ?? '0') || undefined;
@@ -92,9 +91,9 @@ async function ingest(): Promise<void> {
   }
 
   const store = openStore();
-  // Provenance pointer (stable) vs done-list key (includes content hash).
+  // Provenance pointer (which session, which chunk) vs done-list key (content only).
   const chunkRef = (c: Chunk) => `${c.sessionId}#${c.index}`;
-  const doneKey = (c: Chunk) => `${c.sessionId}#${c.index}#${c.hash}`;
+  const doneKey = chunkDoneKey;
 
   let chunks: Chunk[] = [];
   for (const s of sessions) chunks.push(...chunkSession(s));
