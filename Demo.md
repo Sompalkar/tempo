@@ -24,7 +24,16 @@ echo "What's our staging database host, and how do we deploy? One line." \
 
 
 
+
+
+rm -f ~/.tempo/demo.db ~/.tempo/demo.db-wal ~/.tempo/demo.db-shm; export TEMPO_CAPTURE=off
+
+
+
+
 step 1 —
+
+
 
 
 
@@ -39,8 +48,6 @@ echo "Use tempo_remember to store key 'deploy.command' with value './scripts/shi
 
 
 
-echo "What is our deploy command? Check team memory first." \
-  | TEMPO_WRITER=agent-carol claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_recall
 
 
 
