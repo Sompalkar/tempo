@@ -4,15 +4,20 @@ About two minutes. Lines in **bold** are what you say. Everything else is
 what you type or what shows up on screen. Every command here was run for
 real; the outputs are the real outputs.
 
-Before recording, in the terminal:
+Before recording, in the terminal (off camera):
 
 ```bash
-export TEMPO_DB=~/.tempo/demo.db TEMPO_ORG=acme
-rm -f ~/.tempo/demo.db*
+cd ~/dev/glen
+alias tempo='node ~/dev/glen/src/cli.ts'
+export TEMPO_DB=~/.tempo/demo.db TEMPO_ORG=acme TEMPO_LLM=claude
+rm -f ~/.tempo/demo.db ~/.tempo/demo.db-wal ~/.tempo/demo.db-shm
 ```
 
-Scene 0 needs ~30 seconds between the two commands for the background
-capture to finish. Say the middle line slowly, or cut.
+Cost: the whole demo is about 8 small Haiku calls. Scene 3 makes none —
+`tempo report` only reads the database that's already there.
+
+Scene 0 needs ~30 seconds between its two commands for the background
+capture to finish. Say the middle line slowly, or cut there.
 
 ---
 
@@ -50,6 +55,13 @@ echo "What's our staging database host, and how do we deploy? One line." \
 **It knows. No tool call, no memory command, no API key — the plugin
 captured it when the session ended and handed it to the next one. That's
 the loop. Now the interesting part: what happens when facts disagree.**
+
+*(off camera, or just type it — it's fine on screen: fresh DB for the next
+scenes, and turn auto-capture off so it doesn't interfere)*
+
+```bash
+rm -f ~/.tempo/demo.db ~/.tempo/demo.db-wal ~/.tempo/demo.db-shm; export TEMPO_CAPTURE=off
+```
 
 ---
 
@@ -137,6 +149,7 @@ this at my own Claude Code transcripts — ten sessions from one real project
 ```bash
 TEMPO_ORG=som tempo report
 ```
+*(this reads ~/.tempo/som.db — the RoboTrain data is already there, no model calls)*
 > facts stored ............ 1262
 > superseded (changed) .... 14
 > confirmed by 2+ sources . 78
@@ -193,8 +206,10 @@ Glen. Thanks.**
 ## Notes before you hit record
 
 - Run the setup lines first so the demo DB is empty.
-- Scene 3 uses the `som` org, which already has the RoboTrain data. Don't
-  reset that one.
+- Scene 3 uses the `som` org — `~/.tempo/som.db` — which already has the
+  RoboTrain data. Never delete that file.
+- Screen + voice only. Cmd+Shift+5 on a Mac, pick the mic, record the
+  terminal window. Big font. One take is fine.
 - If a `claude -p` call takes a few seconds, just wait. Don't fill the
   silence.
 - You don't have to say every bold line word for word. Say it how you'd
