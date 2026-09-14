@@ -15,6 +15,7 @@
  *
  * Nothing here talks to a network or an LLM, so it is fully tested.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -142,6 +143,12 @@ export function parseTranscript(path: string, project: string): Session | null {
   };
 }
 
+/** The project slug is the transcript's parent directory name. */
+export function projectOf(transcriptPath: string): string {
+  const parts = transcriptPath.split('/');
+  return parts[parts.length - 2] ?? 'unknown';
+}
+
 /** Every session under ~/.claude/projects, newest first. */
 export function findSessions(opts: { root?: string; projects?: string[] } = {}): Session[] {
   const root = opts.root ?? join(homedir(), '.claude', 'projects');
@@ -178,6 +185,12 @@ export interface Chunk {
   at: number;
   /** Index of this chunk within its session, for the source pointer. */
   index: number;
+  /**
+   * Short hash of the text. The LAST chunk of a live session keeps growing
+   * as turns are added, so "chunk 7 already done" is only true for the text
+   * chunk 7 had at the time. Ingest keys its done-list on index + hash.
+   */
+  hash: string;
 }
 
 /**
@@ -193,13 +206,15 @@ export function chunkSession(s: Session, targetChars = 6000): Chunk[] {
 
   const flush = () => {
     if (buf.length === 0) return;
+    const text = buf.join('\n\n');
     chunks.push({
-      text: buf.join('\n\n'),
+      text,
       sessionId: s.sessionId,
       project: s.project,
       title: s.title,
       at,
       index: chunks.length,
+      hash: createHash('sha1').update(text).digest('hex').slice(0, 10),
     });
     buf = [];
     size = 0;

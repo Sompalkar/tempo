@@ -20,7 +20,7 @@ import { formatFacts } from './format.ts';
 import { extractFacts } from './extract.ts';
 import { Reconciler } from './reconcile.ts';
 import { defaultLLM } from './llm.ts';
-import { chunkSession, findSessions, type Chunk } from './ingest/claude-code.ts';
+import { chunkSession, findSessions, parseTranscript, projectOf, type Chunk } from './ingest/claude-code.ts';
 import { KeyedQueue } from './ingest/keyed-queue.ts';
 import type { RememberAction } from './types.ts';
 
@@ -28,7 +28,7 @@ const args = process.argv.slice(2);
 const cmd = args[0] ?? 'help';
 
 /** Options that take a value. Their value must not be mistaken for a positional word. */
-const VALUED = new Set(['project', 'sessions', 'chunks', 'concurrency', 'limit', 'key', 'valid-at', 'as-of', 'status']);
+const VALUED = new Set(['project', 'file', 'sessions', 'chunks', 'concurrency', 'limit', 'key', 'valid-at', 'as-of', 'status']);
 
 function flag(name: string): boolean {
   return args.includes(`--${name}`);
@@ -75,13 +75,26 @@ async function ingest(): Promise<void> {
   const limitChunks = Number(opt('chunks') ?? '0') || undefined;
   const concurrency = Number(opt('concurrency') ?? '6');
 
-  const findOpts: Parameters<typeof findSessions>[0] = {};
-  if (projects) findOpts.projects = projects;
-  let sessions = findSessions(findOpts);
-  if (limitSessions) sessions = sessions.slice(0, limitSessions);
+  const quiet = flag('quiet');
+  const say = (msg: string) => { if (!quiet) console.log(msg); };
+
+  let sessions;
+  const file = opt('file');
+  if (file) {
+    // One transcript, e.g. from the session-end hook.
+    const one = parseTranscript(file, projectOf(file));
+    sessions = one ? [one] : [];
+  } else {
+    const findOpts: Parameters<typeof findSessions>[0] = {};
+    if (projects) findOpts.projects = projects;
+    sessions = findSessions(findOpts);
+    if (limitSessions) sessions = sessions.slice(0, limitSessions);
+  }
 
   const store = openStore();
+  // Provenance pointer (stable) vs done-list key (includes content hash).
   const chunkRef = (c: Chunk) => `${c.sessionId}#${c.index}`;
+  const doneKey = (c: Chunk) => `${c.sessionId}#${c.index}#${c.hash}`;
 
   let chunks: Chunk[] = [];
   for (const s of sessions) chunks.push(...chunkSession(s));
@@ -90,18 +103,18 @@ async function ingest(): Promise<void> {
   // Skip what a previous run already finished. Makes ingest safe to re-run
   // (a nightly cron, or resuming after a crash) without double-counting.
   const total = chunks.length;
-  chunks = chunks.filter((c) => !store.isIngested(org, chunkRef(c)));
+  chunks = chunks.filter((c) => !store.isIngested(org, doneKey(c)));
   const skipped = total - chunks.length;
   if (limitChunks) chunks = chunks.slice(0, limitChunks);
 
   if (chunks.length === 0) {
-    console.log(skipped ? `Nothing new: all ${skipped} chunk(s) already ingested.` : 'No sessions found.');
+    say(skipped ? `Nothing new: all ${skipped} chunk(s) already ingested.` : 'No sessions found.');
     store.close();
     return;
   }
 
-  console.log(`${sessions.length} session(s), ${chunks.length} chunk(s)${skipped ? ` (${skipped} already done, skipped)` : ''}.`);
-  console.log(`That is ${chunks.length} model call(s) via ${defaultLLM().name}. Writing to ${dbPath} (org "${org}").`);
+  say(`${sessions.length} session(s), ${chunks.length} chunk(s)${skipped ? ` (${skipped} already done, skipped)` : ''}.`);
+  say(`That is ${chunks.length} model call(s) via ${defaultLLM().name}. Writing to ${dbPath} (org "${org}").`);
   if (!(await confirm('Run it?'))) {
     console.log('Stopped.');
     store.close();
@@ -184,30 +197,31 @@ async function ingest(): Promise<void> {
           );
         }
         // Only mark the chunk done once every one of its facts has landed.
-        void Promise.all(settled).then(() => store.markIngested(org, chunkRef(chunk)));
+        void Promise.all(settled).then(() => store.markIngested(org, doneKey(chunk)));
       } catch (e) {
         failed++;
         if (failed <= 3) console.error(`\n  chunk failed: ${(e as Error).message}`);
         if (failed === 3) console.error('  (further failures counted silently; re-run ingest to retry them)');
       }
       done++;
-      if (done % 10 === 0 || done === chunks.length) {
+      if (!quiet && (done % 10 === 0 || done === chunks.length)) {
         process.stderr.write(`\r  extracted ${done}/${chunks.length} chunks…`);
       }
     }
   };
 
   await Promise.all(Array.from({ length: concurrency }, () => extractor()));
-  process.stderr.write('\n  finishing writes…');
+  if (!quiet) process.stderr.write('\n  finishing writes…');
   await writes.drain();
-  process.stderr.write('\n');
+  if (!quiet) process.stderr.write('\n');
 
-  console.log('\nDone.');
-  for (const [k, v] of Object.entries(counts)) if (v) console.log(`  ${k}: ${v}`);
-  if (reconciled) console.log(`  rewordings merged instead of flagged: ${reconciled}`);
-  console.log(`  same/different decided without an LLM: ${reconciler.stats.cheap}, judged: ${reconciler.stats.judged}, cached: ${reconciler.stats.cacheHits}`);
-  if (dropped) console.log(`  malformed facts dropped: ${dropped}`);
-  if (failed) console.log(`  chunks that failed: ${failed}`);
+  say('\nDone.');
+  for (const [k, v] of Object.entries(counts)) if (v) say(`  ${k}: ${v}`);
+  if (reconciled) say(`  rewordings merged instead of flagged: ${reconciled}`);
+  say(`  same/different decided without an LLM: ${reconciler.stats.cheap}, judged: ${reconciler.stats.judged}, cached: ${reconciler.stats.cacheHits}`);
+  if (dropped) say(`  malformed facts dropped: ${dropped}`);
+  if (failed) say(`  chunks that failed: ${failed}`);
+  if (quiet) console.log(`ingest ${file ?? ''}: ${chunks.length} chunks, ${Object.entries(counts).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(' ')}${failed ? ` failed=${failed}` : ''}`);
   store.close();
 }
 
@@ -318,7 +332,7 @@ function report(): void {
 
 const help = `tempo — memory that knows when things stopped being true
 
-  tempo ingest [--project <slug,...>] [--sessions N] [--chunks N] [--yes]
+  tempo ingest [--project <slug,...>] [--file <transcript.jsonl>] [--sessions N] [--chunks N] [--yes] [--quiet]
         Read Claude Code sessions, pull out durable facts, store them.
         One Haiku call per chunk. Runs on your Claude Code subscription by
         default (TEMPO_LLM=claude); set ANTHROPIC_API_KEY for the faster API path.

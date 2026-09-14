@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chunkSession, findSessions, parseTranscript, type Session } from './claude-code.ts';
+import { chunkSession, findSessions, parseTranscript, projectOf, type Session } from './claude-code.ts';
 
 const T = (n: number) => new Date(Date.UTC(2026, 0, n)).toISOString();
 
@@ -174,5 +174,24 @@ describe('chunkSession', () => {
 
   it('returns nothing for a session with no turns', () => {
     expect(chunkSession(session([]))).toEqual([]);
+  });
+});
+
+describe('chunk hash', () => {
+  it('changes when the last chunk grows, so a live session is re-ingested correctly', () => {
+    const base: Session = {
+      sessionId: 's1', cwd: '/', project: 'p', title: 't', startedAt: 0, endedAt: 0, path: '/p',
+      turns: [{ role: 'user', text: 'first', at: 1 }],
+    };
+    const a = chunkSession(base)[0]!;
+    const b = chunkSession({ ...base, turns: [...base.turns, { role: 'assistant', text: 'more', at: 2 }] })[0]!;
+    expect(a.index).toBe(b.index);
+    expect(a.hash).not.toBe(b.hash);
+  });
+});
+
+describe('projectOf', () => {
+  it('is the transcript\'s parent directory name', () => {
+    expect(projectOf('/Users/x/.claude/projects/-Users-x-dev-app/abc.jsonl')).toBe('-Users-x-dev-app');
   });
 });
