@@ -506,3 +506,45 @@ from day 2 made this a one-line answer instead of a redesign.
 - 113 tests. Plugin needs no key. Ingest runs on the subscription.
 - Real report from 10 sessions in `bench/REPORT-robotrain.md`.
 - Left to do: record the demo, send the DM.
+
+---
+
+## Day 3 — it learns as you go
+
+Som asked the question I'd been deferring: "tempo reads *old* transcripts.
+What about the session I'm in right now?" The honest answer was that the
+prompt hook *asked* Claude to call `tempo_remember` when it learned
+something durable, and Claude sometimes did. That is not capture. That is
+hoping.
+
+### The fix reused everything
+
+Ingest already turns a transcript into facts and is idempotent. So: when a
+session ends, run ingest on that one transcript. Three small pieces:
+
+1. `--file <transcript>` on ingest, so a hook can point it at one session.
+2. The done-list key now includes a content hash. The last chunk of a live
+   session keeps growing, so "chunk 7 done" was only true for the text
+   chunk 7 had at the time. Without this, the tail of every session would
+   have been silently skipped.
+3. A `SessionEnd` hook. Claude Code gives it 1.5 seconds and is already
+   exiting, so the hook cannot *run* the ingest — it starts it detached
+   and returns. The ingest finishes after Claude Code has closed and logs
+   one line to `~/.tempo/capture.log`.
+
+### First live test
+
+Told a session: "staging is Postgres 16 at db-staging.internal, deploys go
+through `make ship`". Closed it. Thirty seconds later, three facts in
+memory — `db.staging.host`, `db.staging.type`, `deploy.command` — with the
+session id as provenance. Opened a new session and asked how we deploy.
+It answered from the hook's context without calling a single tool.
+
+One oddity: `claude -p` wrote two transcript files for the one session, so
+capture fired twice. The second run corroborated the same three facts
+(×2) rather than duplicating them. The engine did the right thing; the
+confirmation count is slightly flattered.
+
+That closes the loop the plugin was missing: work, close, and the next
+session knows. Same model as Glen — capture as the work happens — on one
+machine, with no key.

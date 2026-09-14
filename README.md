@@ -19,9 +19,23 @@ claude plugin marketplace add Sompalkar/tempo
 claude plugin install tempo@tempo
 ```
 
-That gives Claude Code the four `tempo_*` tools and a hook that recalls
-relevant facts before every prompt. No build step — Node 26 runs the
-TypeScript directly.
+That gives Claude Code three things:
+
+- **capture** — when a session ends, tempo reads the transcript in the
+  background and saves the durable facts (commands, config, decisions).
+  You do nothing.
+- **recall** — before every prompt, a hook looks up facts that match what
+  you're asking and hands them to Claude. If two facts disagree, Claude
+  sees both, flagged.
+- **four tools** — `tempo_remember`, `tempo_recall`, `tempo_conflicts`,
+  `tempo_resolve`, for when Claude wants to save or check something itself.
+
+No API key. Capture runs on your Claude subscription. One SQLite file on
+your machine. No build step — Node 26 runs the TypeScript directly.
+
+Tell a session "staging is Postgres 16 at db-staging.internal, deploys go
+through `make ship`", close it, open a new one, ask "how do we deploy?" —
+it knows. That was the first live test; it's in the journal.
 
 ## The idea in one table
 
@@ -104,11 +118,12 @@ the hard part. The useful thing is that adding a real system is ~50 lines
 (`src/bench/adapter.ts`). If you maintain a memory tool and think your system
 passes these, add an adapter and open a PR. We will run it and publish the row.
 
-## Run it on your own sessions
+## Import your history
 
-tempo can read your Claude Code transcripts, pull out the durable facts
-(commands, decisions, config, gotchas), and tell you what changed over time
-and where your own past sessions disagree with each other.
+Capture handles sessions from now on. For the sessions you already have,
+`tempo ingest` reads old transcripts the same way and tells you what
+changed over time and where your own past sessions disagree with each
+other.
 
 ```
 tempo ingest --sessions 10   # reads ~/.claude/projects, asks before running

@@ -11,6 +11,9 @@ export TEMPO_DB=~/.tempo/demo.db TEMPO_ORG=acme
 rm -f ~/.tempo/demo.db*
 ```
 
+Scene 0 needs ~30 seconds between the two commands for the background
+capture to finish. Say the middle line slowly, or cut.
+
 ---
 
 ## Open
@@ -24,10 +27,36 @@ own history.**
 
 ---
 
+## Scene 0 — it just learns
+
+**Quick one before the real demo. Watch this. I'm going to tell a session
+something, close it, and ask a new session.**
+
+```bash
+echo "For the record: staging is Postgres 16 at db-staging.internal, and deploys go through 'make ship'. Just say OK." \
+  | claude -p
+```
+> OK. Got it.
+
+**Session's closed. tempo read the transcript in the background, pulled
+out three facts. I didn't call anything. Now a brand new session:**
+
+```bash
+echo "What's our staging database host, and how do we deploy? One line." \
+  | claude -p
+```
+> Staging DB is `db-staging.internal` (Postgres 16), deploy with `make ship`.
+
+**It knows. No tool call, no memory command, no API key — the plugin
+captured it when the session ended and handed it to the next one. That's
+the loop. Now the interesting part: what happens when facts disagree.**
+
+---
+
 ## Scene 1 — two agents disagree
 
-**First one. I've got three Claude Code sessions here, all pointed at the
-same memory file. Think of them as three people on a team.**
+**I've got three Claude Code sessions here, all pointed at the same memory
+file. Think of them as three people on a team.**
 
 **Alice saves the deploy command.**
 
