@@ -4,7 +4,9 @@ About two minutes. Lines in **bold** are what you say. Everything else is
 what you type or what shows up on screen. Every command here was run for
 real; the outputs are the real outputs.
 
-Before recording, in the terminal (off camera):
+Before recording, in the terminal (off camera). **Run these in the same
+terminal window you record in** — they set which memory file the demo uses.
+Without them, the demo reads your default memory and you'll see stray facts.
 
 ```bash
 cd ~/dev/glen
@@ -38,8 +40,7 @@ own history.**
 something, close it, and ask a new session.**
 
 ```bash
-echo "For the record: staging is Postgres 16 at db-staging.internal, and deploys go through 'make ship'. Just say OK." \
-  | claude -p
+echo "For the record: staging is Postgres 16 at db-staging.internal, and deploys go through 'make ship'. Just say OK." | claude -p
 ```
 > OK. Got it.
 
@@ -47,8 +48,7 @@ echo "For the record: staging is Postgres 16 at db-staging.internal, and deploys
 out three facts. I didn't call anything. Now a brand new session:**
 
 ```bash
-echo "What's our staging database host, and how do we deploy? One line." \
-  | claude -p
+echo "What's our staging database host, and how do we deploy? One line." | claude -p
 ```
 > Staging DB is `db-staging.internal` (Postgres 16), deploy with `make ship`.
 
@@ -73,8 +73,7 @@ file. Think of them as three people on a team.**
 **Alice saves the deploy command.**
 
 ```bash
-echo "Use tempo_remember to store key 'deploy.command' with value 'make deploy'." \
-  | TEMPO_WRITER=agent-alice claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
+echo "Use tempo_remember to store key 'deploy.command' with value 'make deploy'." | TEMPO_WRITER=agent-alice claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
 ```
 > Tempo inserted the fact.
 
@@ -83,8 +82,7 @@ he's on an older branch, maybe he's right and Alice is wrong — nobody knows
 yet.**
 
 ```bash
-echo "Use tempo_remember to store key 'deploy.command' with value './scripts/ship.sh'." \
-  | TEMPO_WRITER=agent-bob claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
+echo "Use tempo_remember to store key 'deploy.command' with value './scripts/ship.sh'." | TEMPO_WRITER=agent-bob claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
 ```
 > The tool returned a conflict — there's an existing fact that deploy.command is "make deploy".
 
@@ -95,8 +93,7 @@ last. It said: these two disagree, and I'm keeping both.**
 question.**
 
 ```bash
-echo "What is our deploy command? Check team memory first." \
-  | TEMPO_WRITER=agent-carol claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_recall
+echo "What is our deploy command? Check team memory first." | TEMPO_WRITER=agent-carol claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_recall
 ```
 > Based on team memory, **there's a conflict** — two different deploy commands are recorded:
 > 1. `./scripts/ship.sh` (recorded by agent-bob)
@@ -119,8 +116,7 @@ in March, 14 days in June. Most memory just keeps the latest one and
 forgets the old one ever existed.**
 
 ```bash
-echo "tempo_remember: key 'refund.policy', value '30 days', validFrom '2026-03-01'. Then key 'refund.policy', value '14 days', validFrom '2026-06-01'." \
-  | claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
+echo "tempo_remember: key 'refund.policy', value '30 days', validFrom '2026-03-01'. Then key 'refund.policy', value '14 days', validFrom '2026-06-01'." | claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_remember
 ```
 > Call 1: inserted. Call 2: superseded.
 
@@ -128,8 +124,7 @@ echo "tempo_remember: key 'refund.policy', value '30 days', validFrom '2026-03-0
 end date now. So I can ask about the past.**
 
 ```bash
-echo "A customer is disputing an April 2026 charge. What was our refund policy then, and what is it now?" \
-  | claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_recall
+echo "A customer is disputing an April 2026 charge. What was our refund policy then, and what is it now?" | claude -p --allowedTools mcp__plugin_tempo_tempo__tempo_recall
 ```
 > April 2026: **30 days** (superseded June 1)
 > Today: **14 days**
